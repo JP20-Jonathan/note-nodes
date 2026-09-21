@@ -1,0 +1,291 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
+
+#tsparticles { position: fixed; inset: 0; z-index: 0; }
+#root { position: relative; z-index: 1; }
+
+/* Ponemos nuestra paleta encima de las variables de Bootstrap, para que
+   TODO lo que ya trae Bootstrap (botones, inputs, modales, badges) herede
+   automáticamente buen contraste — Bootstrap es la base, esto solo la tiñe. */
+[data-bs-theme="dark"] {
+  --bs-body-bg: #141C17;
+  --bs-body-color: #EDEAE1;
+  --bs-emphasis-color: #FFFFFF;
+  --bs-secondary-color: rgba(237,234,225,0.65);
+  --bs-border-color: rgba(237,234,225,0.16);
+  --bs-tertiary-bg: #1E2A22;
+  --bs-secondary-bg: #26352C;
+  --bs-link-color: #EDEAE1;
+  font-family: 'Work Sans', sans-serif;
+}
+
+.pnd-app {
+  --bg: var(--bs-body-bg);
+  --surface: var(--bs-tertiary-bg);
+  --surface-2: var(--bs-secondary-bg);
+  --border: var(--bs-border-color);
+  --text: var(--bs-body-color);
+  --text-dim: var(--bs-secondary-color);
+  --sema-red: #E5484D;
+  --sema-yellow: #EAC54F;
+  --sema-green: #4CAF7D;
+  --accent: #E8A33D;
+  /* Glow del grafo por tipificado (ver ForceGraph): urgentes/atrasados usan
+     un rojo más intenso que importantísimas; esta_semana/siguientes usan
+     el mismo verde/amarillo "titilante" para que el árbol cuente la misma
+     historia que el Tablero, de un vistazo. */
+  --glow-urgent-red: #FF3B30;
+  --glow-active-green: #4ADE80;
+
+  background: transparent;
+  color: var(--text);
+  font-family: 'Work Sans', sans-serif;
+  min-height: 100vh;
+  width: 100%;
+  padding: 0 0 60px 0;
+}
+.pnd-app h1, .pnd-app h2, .pnd-app h3, .pnd-app .pnd-serif {
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.pnd-header { padding: 32px 24px 8px; text-align: center; }
+.pnd-header h1 { font-size: 30px; margin: 0 0 6px; }
+.pnd-sub { color: var(--text-dim); font-size: 14px; margin: 0; }
+
+
+.pnd-tabs {
+  display: flex; justify-content: center; gap: 6px; margin: 22px auto 0;
+  padding: 4px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 999px; width: fit-content;
+}
+.backup-bar { display: flex; justify-content: center; gap: 8px; margin: 12px auto 0; flex-wrap: wrap; }
+.pnd-tab {
+  display: flex; align-items: center; gap: 6px; border: none; background: transparent;
+  color: var(--text-dim); font-family: 'Work Sans', sans-serif; font-size: 13px; font-weight: 500;
+  padding: 9px 16px; border-radius: 999px; cursor: pointer;
+}
+.pnd-tab.active { background: var(--surface-2); color: var(--text); }
+.pnd-main { max-width: 960px; margin: 0 auto; padding: 28px 20px 0; }
+
+.icon-btn {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  min-width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center;
+  justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0 8px; font-size: 14px; line-height: 1;
+}
+.icon-btn:hover { border-color: var(--text-dim); }
+
+.btn-primary {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  background: var(--text); color: var(--bg); border: none; border-radius: 12px;
+  padding: 10px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: 'Work Sans', sans-serif;
+}
+.btn-ghost {
+  display: flex; align-items: center; gap: 6px; background: transparent;
+  border: 1px solid var(--border); color: var(--text-dim); border-radius: 10px;
+  padding: 7px 11px; font-size: 12.5px; cursor: pointer; font-family: 'Work Sans', sans-serif;
+}
+.btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
+
+.item-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim); }
+.chip.deadline-soon { border-color: var(--sema-red); color: var(--sema-red); }
+.chip.deadline-week { border-color: var(--sema-yellow); color: var(--sema-yellow); }
+.chip.deadline-far { border-color: var(--sema-green); color: var(--sema-green); }
+.empty-state { text-align: center; color: var(--text-dim); font-size: 13.5px; border: 1px dashed var(--border); border-radius: 16px; padding: 22px 16px; }
+.field-error { color: var(--sema-red); font-size: 12.5px; margin: 0; }
+
+/* Modal formulario */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(8,10,8,.6); z-index: 1056; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-y: auto; }
+.pnd-modal {
+  position: relative; border-radius: 20px; width: min(440px, 100%); padding: 22px;
+  display: flex; flex-direction: column; gap: 14px; margin: auto;
+  background: rgba(30, 42, 34, 0.68);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.04);
+}
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 12px; color: var(--text-dim); }
+.field input[type="text"], .field select, .field input[type="date"] {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 10px; padding: 10px 11px; font-size: 14px; font-family: 'Work Sans', sans-serif;
+}
+.cap-note { font-size: 11.5px; color: var(--text-dim); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+
+/* Tablero */
+.tablero-complete-zone {
+  position: fixed; top: 16px; right: 16px; z-index: 70;
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+  border: 1.5px dashed var(--sema-green); color: var(--sema-green);
+  background: rgba(20, 28, 23, 0.85); backdrop-filter: blur(6px);
+  transition: background 150ms ease, border-style 150ms ease;
+}
+.tablero-complete-zone.drag-over { background: rgba(76,175,125,0.3); border-style: solid; }
+@media (max-width: 640px) {
+  .tablero-complete-zone { top: 8px; right: 8px; padding: 6px 10px; font-size: 11px; }
+}
+
+/* Crecen con lo que se agenda: sin alto fijo, solo un mínimo cuando están
+   vacíos — así "se van llenando" en vez de quedarse siempre del mismo tamaño.
+   "Esta semana" es la principal (centrada, más grande); "Próxima semana" es
+   secundaria, chica y cuadrada, a un lado — en pantallas angostas ambas se
+   apilan a ancho completo. */
+.categoria-schedule-row { display: flex; gap: 16px; margin-bottom: 22px; align-items: flex-start; }
+.categoria-schedule-box {
+  padding: 14px 16px; border-radius: 16px;
+  border: 2px dashed var(--border); color: var(--text-dim);
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+.categoria-schedule-box.drag-over { border-color: var(--accent); color: var(--text); background: rgba(232,163,61,0.1); }
+.categoria-schedule-box-head { font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+.categoria-schedule-box-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+
+.categoria-schedule-box--main { flex: 1; min-height: 90px; padding: 22px; text-align: center; }
+.categoria-schedule-box--main .categoria-schedule-box-head { justify-content: center; font-size: 16px; }
+.categoria-schedule-box--main .categoria-schedule-box-list { justify-content: center; }
+.categoria-schedule-box--side { flex: 0 0 170px; min-height: 170px; }
+
+@media (max-width: 760px) {
+  .categoria-schedule-row { flex-direction: column; }
+  .categoria-schedule-box--side { flex: 1 1 auto; width: 100%; min-height: 64px; }
+}
+
+.tablero-row-label { font-size: 12.5px; color: var(--text-dim); margin: 22px 0 8px; text-transform: uppercase; letter-spacing: .05em; }
+.tablero-row-label:first-child { margin-top: 0; }
+.tablero-grid { display: grid; gap: 16px; }
+.tablero-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+.tablero-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+.tablero-grid.cols-wrap { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+@media (max-width: 760px) { .tablero-grid.cols-3, .tablero-grid.cols-2 { grid-template-columns: 1fr; } }
+
+.tab-col {
+  border-radius: 18px; overflow: hidden; display: flex; flex-direction: column;
+  background: radial-gradient(circle at 85% 0%, rgba(232,163,61,.08), transparent 55%), rgba(30, 42, 34, 0.6);
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+.tab-col-head { padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: baseline; gap: 8px; transition: background 150ms ease; }
+.tab-col-head h3 { font-size: 14px; margin: 0; display: flex; align-items: center; gap: 6px; }
+.tab-col-head span { font-size: 11.5px; color: var(--text-dim); white-space: nowrap; }
+.tab-col-head.drag-over { background: rgba(232,163,61,0.14); }
+.tab-col.special { border-color: var(--accent); }
+.tab-col-drag-handle { cursor: grab; color: var(--text-dim); font-size: 13px; letter-spacing: -1px; }
+.tab-col-add-btn, .tab-col-size-btn {
+  width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid var(--border); color: var(--text-dim); cursor: pointer;
+  font-size: 11px; font-weight: 700; line-height: 1; border-radius: 6px; padding: 0;
+}
+.tab-col-add-btn { font-size: 13px; font-weight: 400; }
+.tab-col-add-btn:hover, .tab-col-size-btn:hover { color: var(--text); border-color: var(--text-dim); }
+.tab-col-expand-btn {
+  background: transparent; border: none; color: var(--text-dim); cursor: pointer;
+  font-size: 13px; line-height: 1; padding: 2px 4px; border-radius: 6px;
+}
+.tab-col-expand-btn:hover { color: var(--text); background: var(--surface-2); }
+/* Compacta por defecto (se ve scroll adentro si hay más de ~4-5) — el
+   botón ⤢ de la cabecera la deja crecer del todo si se prefiere sin scroll.
+   El tamaño S/M/L (tab-col.size-*) ajusta cuánto se ve antes de tener que
+   hacer scroll, y en la grilla "wrap" del Backlog además el ancho. */
+.tab-col-list { padding: 4px 10px 12px; flex: 1; max-height: 300px; overflow-y: auto; }
+.tab-col-list.expanded { max-height: none; overflow-y: visible; }
+.tab-col.size-large .tab-col-list:not(.expanded) { max-height: 480px; }
+.tablero-grid.cols-wrap .tab-col.size-large { grid-column: span 2; }
+@media (max-width: 640px) { .tablero-grid.cols-wrap .tab-col.size-large { grid-column: span 1; } }
+.tab-row { display: flex; align-items: center; gap: 8px; padding: 9px 4px; border-bottom: 1px solid var(--border); border-top: 2px solid transparent; transition: opacity .15s ease, border-color .15s ease; }
+.tab-row:last-child { border-bottom: none; }
+.tab-row[draggable="true"] { cursor: grab; }
+.tab-row.drag-over { border-top-color: var(--accent); }
+.sema-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 6px 1px currentColor; }
+.tab-row-body { flex: 1; min-width: 0; }
+.tab-row-name { font-size: 13px; line-height: 1.3; }
+.tab-row-meta { display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap; }
+.drag-handle { flex-shrink: 0; color: var(--text-dim); font-size: 14px; line-height: 1; letter-spacing: -1px; padding: 0 2px; user-select: none; }
+
+.alert-banner {
+  background: rgba(229,72,77,0.1); border: 1px solid var(--sema-red); border-radius: 16px;
+  padding: 14px 16px; margin-bottom: 22px; cursor: pointer;
+}
+.alert-banner-head { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--sema-red); font-weight: 600; }
+.alert-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.alert-item {
+  display: flex; align-items: center; gap: 10px; background: var(--surface-2); border-radius: 12px; padding: 10px 12px;
+}
+.alert-item-body { flex: 1; min-width: 0; font-size: 13px; }
+.alert-item-tag { font-size: 11px; color: var(--sema-red); margin-top: 3px; }
+
+.tipificado-help { color: var(--text-dim); font-size: 13px; margin: 0 0 18px; }
+
+/* Árbol: ForceGraph (D3 + React) dentro de este mismo lienzo. Altura real
+   (no solo min-height) para que ForceGraph pueda medir el contenedor con
+   ResizeObserver y llenarlo, tanto en modo normal como expandido. */
+.tree-canvas { position: relative; padding: 12px 10px; height: 65vh; min-height: 420px; }
+.cosmos-stage { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+
+.tree-expand-btn { position: absolute; top: 10px; right: 10px; z-index: 30; }
+.tree-zoom-controls { position: absolute; bottom: 10px; left: 10px; z-index: 30; display: flex; flex-direction: column; gap: 4px; }
+.tree-zoom-controls button {
+  width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); font-size: 16px; line-height: 1; cursor: pointer;
+}
+.tree-zoom-controls button:hover { border-color: var(--text-dim); }
+
+/* "Pantalla completa" propia (no la API nativa del navegador): un overlay
+   fijo que tapa toda la ventana con el mismo fondo de la app, para no
+   pelear con modales ni con el gesto de salir de la Fullscreen API real. */
+.tree-expanded {
+  position: fixed; inset: 0; z-index: 60; background: var(--bg, #141C17);
+  display: flex; flex-direction: column; padding: 14px 14px 0;
+}
+.tree-expanded .canvas-hint { flex-shrink: 0; }
+.tree-expanded .cosmos-stage.tree-canvas { flex: 1; height: auto; min-height: 0; padding: 12px 4px; }
+
+/* Solo el filter (glow) titila — la opacidad se deja libre para que el
+   atenuado por foco (ForceGraph) siga funcionando aunque el nodo titile. */
+@keyframes node-pulse-green {
+  0%, 100% { filter: drop-shadow(0 0 3px var(--glow-active-green)); }
+  50% { filter: drop-shadow(0 0 11px var(--glow-active-green)); }
+}
+@keyframes node-pulse-yellow {
+  0%, 100% { filter: drop-shadow(0 0 3px var(--sema-yellow)); }
+  50% { filter: drop-shadow(0 0 11px var(--sema-yellow)); }
+}
+@keyframes node-pulse-red {
+  0%, 100% { filter: drop-shadow(0 0 3px var(--glow-urgent-red)); }
+  50% { filter: drop-shadow(0 0 13px var(--glow-urgent-red)); }
+}
+.node-pulse-green { animation: node-pulse-green 1.6s ease-in-out infinite; }
+.node-pulse-yellow { animation: node-pulse-yellow 1.6s ease-in-out infinite; }
+.node-pulse-red { animation: node-pulse-red 1.6s ease-in-out infinite; }
+
+/* Reemplaza la miniatura nativa de drag (apagada con setDragImage) — sigue
+   al cursor de verdad vía clientX/clientY del evento "drag". */
+.drag-ghost {
+  position: fixed; z-index: 300; pointer-events: none; transform: translate(10px, 10px);
+  background: var(--surface-2); border: 1px solid var(--accent); border-radius: 10px;
+  padding: 7px 12px; font-size: 12.5px; font-weight: 600; color: var(--text);
+  box-shadow: 0 8px 20px rgba(0,0,0,.4); max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.floating-note {
+  position: absolute; width: 132px; min-height: 58px; background: #F4E4B8; color: #3A2E1A;
+  border-radius: 3px 14px 14px 14px; box-shadow: 0 8px 18px rgba(0,0,0,.4);
+  padding: 9px 10px; font-size: 12.5px; line-height: 1.3; font-family: 'Work Sans', sans-serif;
+  cursor: grab; user-select: none; touch-action: none; z-index: 25; word-break: break-word;
+}
+.floating-note.editing { cursor: text; }
+.floating-note textarea {
+  width: 100%; min-height: 40px; background: transparent; border: none; resize: none;
+  font: inherit; color: inherit; outline: none; padding: 0;
+}
+.note-del {
+  position: absolute; top: -8px; right: -8px; width: 20px; height: 20px; border-radius: 50%;
+  background: #3A2E1A; color: #F4E4B8; font-size: 11px; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.canvas-hint { text-align: center; color: var(--text-dim); font-size: 12.5px; margin: 4px 0 0; }

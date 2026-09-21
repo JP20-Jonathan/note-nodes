@@ -1,0 +1,1762 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mis Pendientes</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.3.3/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Work+Sans:wght@400;500;600&display=swap">
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
+
+#tsparticles { position: fixed; inset: 0; z-index: 0; }
+#root { position: relative; z-index: 1; }
+
+/* Ponemos nuestra paleta encima de las variables de Bootstrap, para que
+   TODO lo que ya trae Bootstrap (botones, inputs, modales, badges) herede
+   automáticamente buen contraste — Bootstrap es la base, esto solo la tiñe. */
+[data-bs-theme="dark"] {
+  --bs-body-bg: #141C17;
+  --bs-body-color: #EDEAE1;
+  --bs-emphasis-color: #FFFFFF;
+  --bs-secondary-color: rgba(237,234,225,0.65);
+  --bs-border-color: rgba(237,234,225,0.16);
+  --bs-tertiary-bg: #1E2A22;
+  --bs-secondary-bg: #26352C;
+  --bs-link-color: #EDEAE1;
+  font-family: 'Work Sans', sans-serif;
+}
+
+.pnd-app {
+  --bg: var(--bs-body-bg);
+  --surface: var(--bs-tertiary-bg);
+  --surface-2: var(--bs-secondary-bg);
+  --border: var(--bs-border-color);
+  --text: var(--bs-body-color);
+  --text-dim: var(--bs-secondary-color);
+  --sema-red: #E5484D;
+  --sema-yellow: #EAC54F;
+  --sema-green: #4CAF7D;
+  --accent: #E8A33D;
+  /* Glow del grafo por tipificado (ver ForceGraph): urgentes/atrasados usan
+     un rojo más intenso que importantísimas; esta_semana/siguientes usan
+     el mismo verde/amarillo "titilante" para que el árbol cuente la misma
+     historia que el Tablero, de un vistazo. */
+  --glow-urgent-red: #FF3B30;
+  --glow-active-green: #4ADE80;
+
+  background: transparent;
+  color: var(--text);
+  font-family: 'Work Sans', sans-serif;
+  min-height: 100vh;
+  width: 100%;
+  padding: 0 0 60px 0;
+}
+.pnd-app h1, .pnd-app h2, .pnd-app h3, .pnd-app .pnd-serif {
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.pnd-header { padding: 32px 24px 8px; text-align: center; }
+.pnd-header h1 { font-size: 30px; margin: 0 0 6px; }
+.pnd-sub { color: var(--text-dim); font-size: 14px; margin: 0; }
+
+
+.pnd-tabs {
+  display: flex; justify-content: center; gap: 6px; margin: 22px auto 0;
+  padding: 4px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 999px; width: fit-content;
+}
+.backup-bar { display: flex; justify-content: center; gap: 8px; margin: 12px auto 0; flex-wrap: wrap; }
+.pnd-tab {
+  display: flex; align-items: center; gap: 6px; border: none; background: transparent;
+  color: var(--text-dim); font-family: 'Work Sans', sans-serif; font-size: 13px; font-weight: 500;
+  padding: 9px 16px; border-radius: 999px; cursor: pointer;
+}
+.pnd-tab.active { background: var(--surface-2); color: var(--text); }
+.pnd-main { max-width: 960px; margin: 0 auto; padding: 28px 20px 0; }
+
+.icon-btn {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  min-width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center;
+  justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0 8px; font-size: 14px; line-height: 1;
+}
+.icon-btn:hover { border-color: var(--text-dim); }
+
+.btn-primary {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  background: var(--text); color: var(--bg); border: none; border-radius: 12px;
+  padding: 10px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: 'Work Sans', sans-serif;
+}
+.btn-ghost {
+  display: flex; align-items: center; gap: 6px; background: transparent;
+  border: 1px solid var(--border); color: var(--text-dim); border-radius: 10px;
+  padding: 7px 11px; font-size: 12.5px; cursor: pointer; font-family: 'Work Sans', sans-serif;
+}
+.btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
+
+.item-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim); }
+.chip.deadline-soon { border-color: var(--sema-red); color: var(--sema-red); }
+.chip.deadline-week { border-color: var(--sema-yellow); color: var(--sema-yellow); }
+.chip.deadline-far { border-color: var(--sema-green); color: var(--sema-green); }
+.empty-state { text-align: center; color: var(--text-dim); font-size: 13.5px; border: 1px dashed var(--border); border-radius: 16px; padding: 22px 16px; }
+.field-error { color: var(--sema-red); font-size: 12.5px; margin: 0; }
+
+/* Modal formulario */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(8,10,8,.6); z-index: 1056; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-y: auto; }
+.pnd-modal {
+  position: relative; border-radius: 20px; width: min(440px, 100%); padding: 22px;
+  display: flex; flex-direction: column; gap: 14px; margin: auto;
+  background: rgba(30, 42, 34, 0.68);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.04);
+}
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 12px; color: var(--text-dim); }
+.field input[type="text"], .field select, .field input[type="date"] {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 10px; padding: 10px 11px; font-size: 14px; font-family: 'Work Sans', sans-serif;
+}
+.cap-note { font-size: 11.5px; color: var(--text-dim); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+
+/* Tablero */
+.tablero-row-label { font-size: 12.5px; color: var(--text-dim); margin: 22px 0 8px; text-transform: uppercase; letter-spacing: .05em; }
+.tablero-row-label:first-child { margin-top: 0; }
+.tablero-grid { display: grid; gap: 16px; }
+.tablero-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+.tablero-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+.tablero-grid.cols-wrap { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+@media (max-width: 760px) { .tablero-grid.cols-3, .tablero-grid.cols-2 { grid-template-columns: 1fr; } }
+
+.tab-col {
+  border-radius: 18px; overflow: hidden; display: flex; flex-direction: column;
+  background: radial-gradient(circle at 85% 0%, rgba(232,163,61,.08), transparent 55%), rgba(30, 42, 34, 0.6);
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+.tab-col-head { padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.tab-col-head h3 { font-size: 14px; margin: 0; }
+.tab-col-head span { font-size: 11.5px; color: var(--text-dim); white-space: nowrap; }
+.tab-col.special { border-color: var(--accent); }
+.tab-col-list { padding: 4px 10px 12px; flex: 1; }
+.tab-row { display: flex; align-items: center; gap: 8px; padding: 9px 4px; border-bottom: 1px solid var(--border); border-top: 2px solid transparent; transition: opacity .15s ease, border-color .15s ease; }
+.tab-row:last-child { border-bottom: none; }
+.tab-row[draggable="true"] { cursor: grab; }
+.tab-row.drag-over { border-top-color: var(--accent); }
+.sema-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 6px 1px currentColor; }
+.tab-row-body { flex: 1; min-width: 0; }
+.tab-row-name { font-size: 13px; line-height: 1.3; }
+.tab-row-meta { display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap; }
+.drag-handle { flex-shrink: 0; color: var(--text-dim); font-size: 14px; line-height: 1; letter-spacing: -1px; padding: 0 2px; user-select: none; }
+
+.alert-banner {
+  background: rgba(229,72,77,0.1); border: 1px solid var(--sema-red); border-radius: 16px;
+  padding: 14px 16px; margin-bottom: 22px; cursor: pointer;
+}
+.alert-banner-head { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--sema-red); font-weight: 600; }
+.alert-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.alert-item {
+  display: flex; align-items: center; gap: 10px; background: var(--surface-2); border-radius: 12px; padding: 10px 12px;
+}
+.alert-item-body { flex: 1; min-width: 0; font-size: 13px; }
+.alert-item-tag { font-size: 11px; color: var(--sema-red); margin-top: 3px; }
+
+.tipificado-help { color: var(--text-dim); font-size: 13px; margin: 0 0 18px; }
+
+/* Árbol: ahora es el ForceGraph (D3 + React, ver bloque 2) dentro de este
+   mismo lienzo — el sol/planetas/lunas/satélites en CSS puro ya no existen. */
+.tree-canvas { position: relative; padding: 40px 10px 90px; min-height: 560px; }
+.cosmos-stage { position: relative; width: 100%; min-height: 560px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+
+/* Solo el filter (glow) titila — la opacidad se deja libre para que el
+   atenuado por foco (ForceGraph) siga funcionando aunque el nodo titile. */
+@keyframes node-pulse-green {
+  0%, 100% { filter: drop-shadow(0 0 3px var(--glow-active-green)); }
+  50% { filter: drop-shadow(0 0 11px var(--glow-active-green)); }
+}
+@keyframes node-pulse-yellow {
+  0%, 100% { filter: drop-shadow(0 0 3px var(--sema-yellow)); }
+  50% { filter: drop-shadow(0 0 11px var(--sema-yellow)); }
+}
+.node-pulse-green { animation: node-pulse-green 1.6s ease-in-out infinite; }
+.node-pulse-yellow { animation: node-pulse-yellow 1.6s ease-in-out infinite; }
+
+.floating-note {
+  position: absolute; width: 132px; min-height: 58px; background: #F4E4B8; color: #3A2E1A;
+  border-radius: 3px 14px 14px 14px; box-shadow: 0 8px 18px rgba(0,0,0,.4);
+  padding: 9px 10px; font-size: 12.5px; line-height: 1.3; font-family: 'Work Sans', sans-serif;
+  cursor: grab; user-select: none; touch-action: none; z-index: 25; word-break: break-word;
+}
+.floating-note.editing { cursor: text; }
+.floating-note textarea {
+  width: 100%; min-height: 40px; background: transparent; border: none; resize: none;
+  font: inherit; color: inherit; outline: none; padding: 0;
+}
+.note-del {
+  position: absolute; top: -8px; right: -8px; width: 20px; height: 20px; border-radius: 50%;
+  background: #3A2E1A; color: #F4E4B8; font-size: 11px; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.canvas-hint { text-align: center; color: var(--text-dim); font-size: 12.5px; margin: 4px 0 0; }
+.note-spot-hint {
+  position: absolute; transform: translate(-50%, -50%); pointer-events: none; z-index: 24;
+  width: 96px; text-align: center; font-size: 10.5px; color: var(--accent); line-height: 1.25;
+  border: 1.5px dashed var(--accent); border-radius: 50%; padding: 14px 6px;
+  animation: pnd-twinkle 1.1s ease-in-out infinite;
+}
+</style>
+</head>
+<body>
+<div id="tsparticles"></div>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tsparticles/3.9.1/tsparticles.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+/* ===========================================================
+   Datos base
+=========================================================== */
+
+// cesde y diseño intercambiaron colores a pedido del usuario (cesde tenía el
+// naranja, diseño el magenta); personales pasó de rosado a gris neutro.
+// proyectos y bmw se dejaron igual porque ya eran verde/azul, como se pidió.
+const CATEGORIES = [
+  { id: "cesde", label: "CESDE", color: "#D65DB1", emoji: "🎓" },
+  { id: "proyectos", label: "Proyectos Propios", color: "#4FA6A0", emoji: "🚀" },
+  { id: "aprendizaje", label: "Aprendizaje y ejercicios", color: "#8C6FC9", emoji: "🧠" },
+  { id: "personales", label: "Pendientes Personales", color: "#9CA3A8", emoji: "🏡" },
+  { id: "bmw", label: "BMW", color: "#5B7FBF", emoji: "🚘" },
+  { id: "diseno", label: "Diseño", color: "#E8A33D", emoji: "🎨" },
+];
+// Versión más saturada/oscura del color de una categoría, para que un nodo
+// de proyecto (subcategoría) se distinga de un pendiente suelto a simple
+// vista sin necesitar un color aparte que haya que mantener sincronizado.
+function darkenHex(hex, amount) {
+  const clean = hex.replace("#", "");
+  const num = parseInt(clean, 16);
+  const r = Math.max(0, Math.round(((num >> 16) & 0xff) * (1 - amount)));
+  const g = Math.max(0, Math.round(((num >> 8) & 0xff) * (1 - amount)));
+  const b = Math.max(0, Math.round((num & 0xff) * (1 - amount)));
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
+const TIPIFICADOS = [
+  { id: "esta_semana", label: "Esta semana", scope: "week", cap: 5, needsDeadline: true },
+  { id: "siguientes_actividades", label: "Siguientes actividades", scope: "week", cap: 8, needsDeadline: true },
+  { id: "proxima_semana", label: "Próxima semana", scope: "week", cap: null, needsDeadline: true },
+  { id: "este_mes", label: "Este mes", scope: "month", cap: 20, needsDeadline: true },
+  { id: "proximo_mes", label: "Próximo mes", scope: "month", cap: 20, needsDeadline: false },
+  { id: "obligatorios", label: "Obligatorios", scope: null, cap: null, needsDeadline: false },
+  { id: "quiero_hacer", label: "Los que yo quiero hacer", scope: null, cap: null, needsDeadline: false },
+  { id: "sin_tipificar", label: "Sin tipificar", scope: null, cap: null, needsDeadline: false },
+  { id: "urgentes", label: "Urgentes", scope: null, cap: null, needsDeadline: false },
+  { id: "importantisimas", label: "Importantísimas", scope: null, cap: null, needsDeadline: false },
+];
+function getTipificado(id) { return TIPIFICADOS.find((t) => t.id === id) || TIPIFICADOS[7]; }
+const TIPIFICADO_ICON = {
+  esta_semana: "🌕", siguientes_actividades: "🌖", proxima_semana: "🌗",
+  este_mes: "🪐", proximo_mes: "🌌",
+  obligatorios: "⚓", quiero_hacer: "✨", sin_tipificar: "☄️", urgentes: "🔥", importantisimas: "⭐",
+};
+function getCategory(id) { return CATEGORIES.find((c) => c.id === id) || CATEGORIES[0]; }
+
+const MONTH_NAMES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const pad2 = (n) => String(n).padStart(2, "0");
+
+function monthKey(year, month) { return `${year}-${pad2(month)}`; }
+function addMonthKey(key, delta) {
+  const [y, m] = key.split("-").map(Number);
+  const total = (y * 12 + (m - 1)) + delta;
+  const ny = Math.floor(total / 12);
+  const nm = (total % 12) + 1;
+  return monthKey(ny, nm);
+}
+function monthLabel(key) {
+  const [y, m] = key.split("-").map(Number);
+  const name = MONTH_NAMES[m - 1] || "";
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${y}`;
+}
+function mondayOf(y, m, d) {
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const day = date.getUTCDay();
+  const offset = (day + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - offset);
+  return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
+}
+function addDaysToDateStr(dateStr, days) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() + days);
+  return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
+}
+function shortDateStr(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return `${d} ${MONTH_NAMES[m - 1].slice(0, 3)}`;
+}
+function weekRangeLabel(monday) {
+  const sunday = addDaysToDateStr(monday, 6);
+  return `${shortDateStr(monday)} – ${shortDateStr(sunday)}`;
+}
+// Hora real de Medellín (America/Bogota), sin importar el huso del navegador.
+function todayInMedellin() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const map = {};
+  parts.forEach((p) => { map[p.type] = p.value; });
+  return { year: Number(map.year), month: Number(map.month), day: Number(map.day) };
+}
+function projectNameFor(projects, item) {
+  if (!item.projectId) return null;
+  const list = projects[item.category] || [];
+  const p = list.find((x) => x.id === item.projectId);
+  return p ? p.name : null;
+}
+/* Promueve proximo_mes -> este_mes y proxima_semana -> esta_semana cuando ya llegaron.
+   Los este_mes / esta_semana / siguientes_actividades vencidos NO se tocan aquí:
+   se detectan (sin mutar nada) con isOverdue. */
+function reconcile(items, currentMonthKey, currentWeekStart) {
+  let changed = false;
+  const next = items.map((item) => {
+    if (item.done) return item;
+    if (item.tipificado === "proximo_mes" && item.anchorMonth && item.anchorMonth <= currentMonthKey) {
+      changed = true;
+      return { ...item, tipificado: "este_mes", anchorMonth: currentMonthKey };
+    }
+    if (item.tipificado === "proxima_semana" && item.anchorWeek && item.anchorWeek <= currentWeekStart) {
+      changed = true;
+      return { ...item, tipificado: "esta_semana", anchorWeek: currentWeekStart };
+    }
+    return item;
+  });
+  return changed ? next : items;
+}
+
+function isOverdue(item, currentMonthKey, currentWeekStart) {
+  if (item.done) return false;
+  if (item.tipificado === "este_mes") return !!item.anchorMonth && item.anchorMonth < currentMonthKey;
+  if (item.tipificado === "esta_semana" || item.tipificado === "siguientes_actividades") {
+    return !!item.anchorWeek && item.anchorWeek < currentWeekStart;
+  }
+  return false;
+}
+
+function countActiveForCap(items, { category, projectId, tipificado, anchorMonth, anchorWeek, excludeId }) {
+  return items.filter((i) => {
+    if (i.id === excludeId) return false;
+    if (i.done) return false;
+    if (i.category !== category) return false;
+    if ((projectId || null) !== (i.projectId || null)) return false;
+    if (i.tipificado !== tipificado) return false;
+    if (anchorMonth && i.anchorMonth !== anchorMonth) return false;
+    if (anchorWeek && i.anchorWeek !== anchorWeek) return false;
+    return true;
+  }).length;
+}
+
+function deadlineChipClass(deadline, todayStr) {
+  if (!deadline) return "badge chip";
+  if (deadline <= todayStr) return "badge chip deadline-soon";
+  const inFive = addDaysToDateStr(todayStr, 5);
+  if (deadline <= inFive) return "badge chip deadline-week";
+  return "badge chip deadline-far";
+}
+
+/* ===========================================================
+   Generador de datos de prueba (50 registros)
+=========================================================== */
+function dateInMonthDay(monthKeyStr, day) {
+  const [y, m] = monthKeyStr.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  const d = Math.min(Math.max(day, 1), lastDay);
+  return `${monthKeyStr}-${pad2(d)}`;
+}
+
+const SEED_PROJECT_NAMES = {
+  proyectos: ["Bolis Inventario", "Badget Notes", "React Learning"],
+  diseno: ["Rediseño UX-UI web-bolis", "Katálogo BMW"],
+};
+
+// Plan de asignación: categoría (y proyecto si aplica), tipificado y nombre.
+// Los conteos respetan los topes (ninguno se acerca a 20/20/5/8).
+function buildSeedPlan() {
+  return [
+    // CESDE (9) — una "este_mes" queda marcada como atrasada para mostrar el aviso
+    { category: "cesde", tip: "esta_semana", name: "Entregar taller de bases de datos" },
+    { category: "cesde", tip: "esta_semana", name: "Estudiar para el parcial de POO" },
+    { category: "cesde", tip: "siguientes_actividades", name: "Subir informe de laboratorio" },
+    { category: "cesde", tip: "este_mes", name: "Revisar rúbrica del proyecto final" },
+    { category: "cesde", tip: "este_mes", name: "Preparar exposición de Spring Boot", overdueMonth: true },
+    { category: "cesde", tip: "proximo_mes", name: "Inscribir electiva del próximo semestre" },
+    { category: "cesde", tip: "obligatorios", name: "Actualizar bitácora de prácticas" },
+    { category: "cesde", tip: "sin_tipificar", name: "Repasar SQL para el quiz" },
+    { category: "cesde", tip: "importantisimas", name: "Enviar consentimiento de pasantía" },
+
+    // Aprendizaje (8)
+    { category: "aprendizaje", tip: "esta_semana", name: "Ejercicios de recursividad" },
+    { category: "aprendizaje", tip: "siguientes_actividades", name: "Practicar consultas SQL avanzadas" },
+    { category: "aprendizaje", tip: "este_mes", name: "Repasar patrones de diseño" },
+    { category: "aprendizaje", tip: "este_mes", name: "Ejercicio de árboles binarios" },
+    { category: "aprendizaje", tip: "proximo_mes", name: "Practicar Git y ramas" },
+    { category: "aprendizaje", tip: "quiero_hacer", name: "Tutorial de Docker" },
+    { category: "aprendizaje", tip: "quiero_hacer", name: "Ejercicios de lógica de programación" },
+    { category: "aprendizaje", tip: "sin_tipificar", name: "Repasar estructuras de datos" },
+
+    // Personales (7) — una "esta_semana" queda atrasada de la semana pasada
+    { category: "personales", tip: "esta_semana", name: "Renovar la cédula", overdueWeek: true },
+    { category: "personales", tip: "proxima_semana", name: "Sacar cita con el dentista" },
+    { category: "personales", tip: "este_mes", name: "Comprar regalo de cumpleaños" },
+    { category: "personales", tip: "este_mes", name: "Llevar el carro al taller" },
+    { category: "personales", tip: "obligatorios", name: "Pagar factura de internet" },
+    { category: "personales", tip: "sin_tipificar", name: "Organizar el clóset" },
+    { category: "personales", tip: "urgentes", name: "Revisar el seguro del carro" },
+
+    // BMW Work (7)
+    { category: "bmw", tip: "esta_semana", name: "Actualizar catálogo de modelos MX" },
+    { category: "bmw", tip: "siguientes_actividades", name: "Revisar Zap de Facebook Leads" },
+    { category: "bmw", tip: "este_mes", name: "Ajustar formulario RFO" },
+    { category: "bmw", tip: "este_mes", name: "Reunión con el equipo de marketing" },
+    { category: "bmw", tip: "proximo_mes", name: "Actualizar plantilla de Excel" },
+    { category: "bmw", tip: "obligatorios", name: "Documentar proceso de Zapier" },
+    { category: "bmw", tip: "sin_tipificar", name: "Enviar reporte semanal" },
+
+    // Proyectos Propios (10, repartidos en 3 proyectos)
+    { category: "proyectos", project: "Bolis Inventario", tip: "esta_semana", name: "Conectar API de inventario" },
+    { category: "proyectos", project: "Bolis Inventario", tip: "este_mes", name: "Diseñar tabla de productos" },
+    { category: "proyectos", project: "Bolis Inventario", tip: "este_mes", name: "Probar alertas de stock bajo" },
+    { category: "proyectos", project: "Bolis Inventario", tip: "sin_tipificar", name: "Documentar endpoints" },
+    { category: "proyectos", project: "Badget Notes", tip: "este_mes", name: "Agregar gráfico de gastos" },
+    { category: "proyectos", project: "Badget Notes", tip: "este_mes", name: "Corregir bug de IndexedDB" },
+    { category: "proyectos", project: "Badget Notes", tip: "quiero_hacer", name: "Mejorar exportar a PDF" },
+    { category: "proyectos", project: "React Learning", tip: "siguientes_actividades", name: "Migrar componente de login" },
+    { category: "proyectos", project: "React Learning", tip: "este_mes", name: "Agregar manejo de errores" },
+    { category: "proyectos", project: "React Learning", tip: "sin_tipificar", name: "Practicar Context API" },
+
+    // Diseño (9, repartidos en 2 proyectos)
+    { category: "diseno", project: "Rediseño UX-UI web-bolis", tip: "esta_semana", name: "Bocetos de la nueva landing" },
+    { category: "diseno", project: "Rediseño UX-UI web-bolis", tip: "este_mes", name: "Elegir paleta de colores" },
+    { category: "diseno", project: "Rediseño UX-UI web-bolis", tip: "este_mes", name: "Prototipo en Figma" },
+    { category: "diseno", project: "Rediseño UX-UI web-bolis", tip: "sin_tipificar", name: "Revisar accesibilidad de contraste" },
+    { category: "diseno", project: "Katálogo BMW", tip: "siguientes_actividades", name: "Ilustración modelos 2026" },
+    { category: "diseno", project: "Katálogo BMW", tip: "este_mes", name: "Diagramar catálogo MX" },
+    { category: "diseno", project: "Katálogo BMW", tip: "este_mes", name: "Ajustar tipografía de marca" },
+    { category: "diseno", project: "Katálogo BMW", tip: "proximo_mes", name: "Exportar assets para impresión" },
+    { category: "diseno", project: "Katálogo BMW", tip: "sin_tipificar", name: "Revisar pruebas de impresión" },
+  ];
+}
+
+function buildTestData(ctx) {
+  const { currentMonthKey, nextMonthKey, currentWeekStart, nextWeekStart } = ctx;
+  const prevMonthKey = addMonthKey(currentMonthKey, -1);
+  const prevWeekStart = addDaysToDateStr(currentWeekStart, -7);
+
+  const seedProjects = {};
+  const projectIdByName = {};
+  Object.entries(SEED_PROJECT_NAMES).forEach(([categoryId, names]) => {
+    seedProjects[categoryId] = names.map((name) => {
+      const id = uid();
+      projectIdByName[`${categoryId}::${name}`] = id;
+      return { id, name, seed: true };
+    });
+  });
+
+  const orderCounters = {};
+  let deadlineCounter = 0;
+
+  const items = buildSeedPlan().map((entry) => {
+    const tipDef = getTipificado(entry.tip);
+    let anchorMonth = null, anchorWeek = null, deadline = null;
+
+    if (entry.tip === "este_mes") {
+      anchorMonth = entry.overdueMonth ? prevMonthKey : currentMonthKey;
+      deadline = entry.overdueMonth ? dateInMonthDay(prevMonthKey, 27) : dateInMonthDay(currentMonthKey, 8 + ((deadlineCounter++ * 5) % 20));
+    } else if (entry.tip === "proximo_mes") {
+      anchorMonth = nextMonthKey;
+    } else if (entry.tip === "esta_semana") {
+      anchorWeek = entry.overdueWeek ? prevWeekStart : currentWeekStart;
+      deadline = entry.overdueWeek ? addDaysToDateStr(prevWeekStart, 4) : addDaysToDateStr(currentWeekStart, (deadlineCounter++ % 6));
+    } else if (entry.tip === "siguientes_actividades") {
+      anchorWeek = currentWeekStart;
+      deadline = addDaysToDateStr(currentWeekStart, 2 + (deadlineCounter++ % 4));
+    } else if (entry.tip === "proxima_semana") {
+      anchorWeek = nextWeekStart;
+      deadline = addDaysToDateStr(nextWeekStart, (deadlineCounter++ % 6));
+    }
+
+    const projectId = entry.project ? projectIdByName[`${entry.category}::${entry.project}`] : null;
+    const orderKey = entry.tip;
+    orderCounters[orderKey] = (orderCounters[orderKey] || 0) + 1;
+
+    return {
+      id: uid(),
+      name: entry.name,
+      category: entry.category,
+      projectId,
+      tipificado: entry.tip,
+      anchorMonth, anchorWeek,
+      deadline: tipDef.needsDeadline ? deadline : null,
+      order: orderCounters[orderKey],
+      done: false,
+      createdAt: Date.now(),
+      seed: true,
+    };
+  });
+
+  const notes = [
+    { id: uid(), text: "Llamar al proveedor de vasos biodegradables", x: 40, y: 40, seed: true },
+    { id: uid(), text: "Preguntar por curso de Excel avanzado", x: 200, y: 90, seed: true },
+  ];
+
+  return { items, seedProjects, notes };
+}
+
+const STORAGE_KEY = "pendientes-tipificados-state-v1";
+const REAL_DATA_V2_FLAG_NAME = "realDataV2Injected";
+
+// Nombres de la primera versión (categorías adivinadas) — se usan para
+// limpiarlos si ya habían quedado guardados, antes de meter la v2 corregida.
+const KNOWN_V1_NAMES = [
+  "Platzi Curso de Java Spring Boot", "Taller Componentes React", "Entrega Clínica Veterinaria",
+  "Publicidad Halloween web-bolis", "Imagen oso - mamá con paquete bolis", "Victoria Secret",
+  "Templar cadena y comprar el tensor", "Revisar aceite y cambiar",
+  "Platzi Cursos Frontend — aquí termina la Uni", "Curso Okta ONE LEARNING",
+  "Curso de Microsoft 365 Copilot (Platzi)", "Pensamiento Lógico (ejercicios)",
+  "Ejercicios de Python - Preparcial", "Web Scrapper (sacar info de páginas e inyectar scripts)",
+  "Curso de práctica SQL Server", "Rediseño UX-UI web-bolis", "Bono Vélez",
+  "Realizar o participar en un Bootcamp", "Certificado de Claude", "Certificado Harvard's CS50",
+  "Aprender .NET",
+];
+
+// Datos reales que Chipi pidió inyectar, con categoría confirmada por él
+// (2026-09, v2). Los que necesitan fecha límite quedan con el último día
+// del período como marcador, a falta de la fecha real.
+function buildRealDataV2(ctx) {
+  const { currentMonthKey, nextMonthKey, currentWeekStart, nextWeekStart } = ctx;
+  const endOfThisWeek = addDaysToDateStr(currentWeekStart, 6);
+  const endOfNextWeek = addDaysToDateStr(nextWeekStart, 6);
+  const endOfThisMonth = dateInMonthDay(currentMonthKey, 31);
+
+  const projectDefs = {
+    diseno: ["web-bolis"],
+    personales: ["Moto/Mecánico"],
+  };
+  const projects = {};
+  const pid = {};
+  Object.entries(projectDefs).forEach(([categoryId, names]) => {
+    projects[categoryId] = names.map((name) => {
+      const id = uid();
+      pid[`${categoryId}::${name}`] = id;
+      return { id, name };
+    });
+  });
+
+  const plan = [
+    { category: "cesde", tip: "esta_semana", name: "Platzi Curso de Java Spring Boot", deadline: endOfThisWeek },
+    { category: "cesde", tip: "esta_semana", name: "Taller Componentes React", deadline: endOfThisWeek },
+    { category: "cesde", tip: "esta_semana", name: "Entrega Clínica Veterinaria", deadline: endOfThisWeek },
+
+    { category: "diseno", project: "web-bolis", tip: "siguientes_actividades", name: "Publicidad Halloween web-bolis", deadline: endOfThisWeek },
+    { category: "diseno", project: "web-bolis", tip: "siguientes_actividades", name: "Imagen oso - mamá con paquete bolis", deadline: endOfThisWeek },
+
+    { category: "personales", tip: "proxima_semana", name: "Victoria Secret", deadline: endOfNextWeek },
+
+    { category: "personales", project: "Moto/Mecánico", tip: "este_mes", name: "Templar cadena y comprar el tensor", deadline: endOfThisMonth },
+    { category: "personales", project: "Moto/Mecánico", tip: "este_mes", name: "Revisar aceite y cambiar", deadline: endOfThisMonth },
+
+    { category: "cesde", tip: "proximo_mes", name: "Platzi Cursos Frontend" },
+    { category: "bmw", tip: "proximo_mes", name: "Curso Okta ONE LEARNING" },
+
+    { category: "cesde", tip: "obligatorios", name: "Curso de Microsoft 365 Copilot (Platzi)" },
+
+    { category: "aprendizaje", tip: "quiero_hacer", name: "Pensamiento Lógico (ejercicios)" },
+    { category: "aprendizaje", tip: "quiero_hacer", name: "Ejercicios de Python - Preparcial" },
+    { category: "aprendizaje", tip: "quiero_hacer", name: "Web Scrapper (sacar info de páginas e inyectar scripts)" },
+    { category: "aprendizaje", tip: "quiero_hacer", name: "Curso de práctica SQL Server" },
+
+    { category: "proyectos", tip: "sin_tipificar", name: "Rediseño UX-UI web-bolis" },
+    { category: "personales", tip: "sin_tipificar", name: "Bono Vélez" },
+    { category: "aprendizaje", tip: "sin_tipificar", name: "Realizar o participar en un Bootcamp" },
+    { category: "aprendizaje", tip: "sin_tipificar", name: "Certificado de Claude" },
+    { category: "aprendizaje", tip: "sin_tipificar", name: "Certificado Harvard's CS50" },
+    { category: "aprendizaje", tip: "sin_tipificar", name: "Aprender .NET" },
+  ];
+
+  const orderCounters = {};
+  const items = plan.map((entry) => {
+    const tipDef = getTipificado(entry.tip);
+    let anchorMonth = null, anchorWeek = null;
+    if (entry.tip === "este_mes") anchorMonth = currentMonthKey;
+    else if (entry.tip === "proximo_mes") anchorMonth = nextMonthKey;
+    else if (entry.tip === "esta_semana" || entry.tip === "siguientes_actividades") anchorWeek = currentWeekStart;
+    else if (entry.tip === "proxima_semana") anchorWeek = nextWeekStart;
+
+    const projectId = entry.project ? pid[`${entry.category}::${entry.project}`] : null;
+    orderCounters[entry.tip] = (orderCounters[entry.tip] || 0) + 1;
+
+    return {
+      id: uid(), name: entry.name, category: entry.category, projectId, tipificado: entry.tip,
+      anchorMonth, anchorWeek, deadline: tipDef.needsDeadline ? (entry.deadline || null) : null,
+      order: orderCounters[entry.tip], done: false, createdAt: Date.now(),
+    };
+  });
+
+  return { items, projects };
+}
+</script>
+
+<script type="text/babel" data-presets="react">
+/* ===========================================================
+   useArbolViewModel — capa de datos para el futuro grafo (D3)
+   ===========================================================
+   Transforma items/projects/categorías en una lista plana de
+   nodos + enlaces, ya lista para que un motor de dibujo (D3 u
+   otro) la consuma. No importa nada de D3, no toca el DOM y no
+   usa JSX: es una función de datos, igual de pura en espíritu
+   que reconcile/isOverdue, aunque no vive en el bloque 1 porque
+   pertenece conceptualmente al Árbol, no al modelo de negocio.
+   Las funciones de negocio (isOverdue, deadlineChipClass) solo
+   se LEEN aquí, nunca se modifican.
+=========================================================== */
+
+function buildItemNode(id, item, cat, parentId, currentMonthKey, currentWeekStart) {
+  return {
+    id,
+    type: "item",
+    parentId,
+    itemId: item.id,
+    categoryId: item.category,
+    projectId: item.projectId || null,
+    label: item.name,
+    color: cat.color,
+    emoji: "✦",
+    radius: 10,
+    meta: {
+      tipificado: item.tipificado,
+      deadline: item.deadline,
+      overdue: isOverdue(item, currentMonthKey, currentWeekStart),
+    },
+  };
+}
+
+/* Hook principal: dado el estado de datos actual, devuelve
+   { nodes, links, byId } listos para un force-directed graph.
+   - nodes: lista plana, cada uno con id/type/parentId/label/
+     color/emoji/radius/meta — nunca JSX, nunca un nodo del DOM.
+   - links: pares { source, target } con los mismos ids que los
+     nodos, en el formato que D3 (forceLink) espera directamente.
+   - byId: mismo contenido que nodes, indexado por id, para
+     lookups rápidos (ej. abrir el detalle de un item por id)
+     sin recorrer el array. */
+function useArbolViewModel(items, projects, currentMonthKey, currentWeekStart) {
+  return useMemo(() => {
+    const nodes = [];
+    const links = [];
+    const activeItems = items.filter((i) => !i.done);
+
+    const SUN_ID = "sun";
+    nodes.push({
+      id: SUN_ID,
+      type: "sun",
+      parentId: null,
+      label: "Pendientes",
+      color: "#F5D67B",
+      emoji: "☀️",
+      radius: 42,
+      meta: { activeCount: activeItems.length },
+    });
+
+    CATEGORIES.forEach((cat) => {
+      const catNodeId = `category:${cat.id}`;
+      const projectList = projects[cat.id] || [];
+      const directItems = activeItems.filter((i) => i.category === cat.id && !i.projectId);
+
+      nodes.push({
+        id: catNodeId,
+        type: "category",
+        parentId: SUN_ID,
+        categoryId: cat.id,
+        label: cat.label,
+        color: cat.color,
+        emoji: cat.emoji,
+        radius: 30,
+        meta: {
+          activeCount: activeItems.filter((i) => i.category === cat.id).length,
+          hasProjects: projectList.length > 0,
+        },
+      });
+      links.push({ source: SUN_ID, target: catNodeId });
+
+      projectList.forEach((project) => {
+        const projNodeId = `project:${project.id}`;
+        const projItems = activeItems.filter((i) => i.projectId === project.id);
+
+        nodes.push({
+          id: projNodeId,
+          type: "project",
+          parentId: catNodeId,
+          categoryId: cat.id,
+          projectId: project.id,
+          label: project.name,
+          color: darkenHex(cat.color, 0.3),
+          emoji: "📁",
+          radius: 20,
+          meta: { activeCount: projItems.length },
+        });
+        links.push({ source: catNodeId, target: projNodeId });
+
+        projItems.forEach((item) => {
+          const itemNodeId = `item:${item.id}`;
+          nodes.push(buildItemNode(itemNodeId, item, cat, projNodeId, currentMonthKey, currentWeekStart));
+          links.push({ source: projNodeId, target: itemNodeId });
+        });
+      });
+
+      directItems.forEach((item) => {
+        const itemNodeId = `item:${item.id}`;
+        nodes.push(buildItemNode(itemNodeId, item, cat, catNodeId, currentMonthKey, currentWeekStart));
+        links.push({ source: catNodeId, target: itemNodeId });
+      });
+    });
+
+    const byId = {};
+    nodes.forEach((n) => { byId[n.id] = n; });
+
+    return { nodes, links, byId };
+  }, [items, projects, currentMonthKey, currentWeekStart]);
+}
+
+/* ===========================================================
+   Componentes
+=========================================================== */
+
+/* ---- Nota flotante tipo Post-it. Ya no se puede arrastrar (esa pieza se
+   retiró junto con el drag-to-assign de categoría): se crea con 2 toques
+   sobre el lienzo, se edita con doble clic y se borra con el botón ✕. La
+   asignación a una categoría queda pendiente de una fase futura (menú de
+   clic derecho), como lo pidió el usuario. ---- */
+function FloatingNote({ note, editing, onStartEdit, onCommit, onDelete }) {
+  const [draft, setDraft] = useState(note.text);
+  return (
+    <div
+      className={`floating-note ${editing ? "editing" : ""}`}
+      style={{ left: note.x, top: note.y }}
+      onDoubleClick={() => onStartEdit(note.id)}
+    >
+      {editing ? (
+        <textarea
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onCommit(draft); } }}
+          onBlur={() => onCommit(draft)}
+          placeholder="Escribe el pendiente…"
+        />
+      ) : (
+        <>
+          {note.text}
+          <button className="note-del" onClick={() => onDelete(note.id)} aria-label="Quitar nota">✕</button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---- Detalle de un pendiente (al tocar su nodo) ---- */
+function ItemDetailPopover({ item, projects, currentMonthKey, currentWeekStart, onClose, onToggleDone, onEdit, onDelete, onRenew }) {
+  const cat = getCategory(item.category);
+  const proj = projectNameFor(projects, item);
+  const tip = getTipificado(item.tipificado);
+  const overdue = isOverdue(item, currentMonthKey, currentWeekStart);
+  const todayStr = `${currentMonthKey}-01`;
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="pnd-modal" onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+          <h3 className="pnd-serif" style={{ margin: 0, fontSize: 16 }}>{item.name}</h3>
+          <button className="btn icon-btn" onClick={onClose} aria-label="Cerrar">✕</button>
+        </div>
+        <div className="item-meta">
+          <span className="badge chip" style={{ borderColor: cat.color, color: cat.color }}>{cat.label}</span>
+          {proj && <span className="badge chip">{proj}</span>}
+          <span className="badge chip">{tip.label}</span>
+          {item.deadline && <span className={deadlineChipClass(item.deadline, todayStr)}>vence {shortDateStr(item.deadline)}</span>}
+          {overdue && <span className="badge chip" style={{ borderColor: "var(--sema-red)", color: "var(--sema-red)" }}>
+            {item.tipificado === "este_mes" ? `Atrasado de ${monthLabel(item.anchorMonth)}` : `Atrasado de la semana del ${shortDateStr(item.anchorWeek)}`}
+          </span>}
+        </div>
+        <div className="modal-actions" style={{ justifyContent: "flex-start", flexWrap: "wrap" }}>
+          <button className="btn btn-ghost" onClick={() => onToggleDone(item.id)}>{item.done ? "Marcar pendiente" : "✓ Marcar hecho"}</button>
+          {overdue && <button className="btn btn-ghost" onClick={() => onRenew(item.id)}>↻ Renovar</button>}
+          <button className="btn btn-ghost" onClick={() => onEdit(item)}>✎ Editar</button>
+          <button className="btn btn-ghost" onClick={() => onDelete(item.id)}>🗑 Eliminar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const TEST_DELETE_QUERY = "DELETE FROM pendientes WHERE es_prueba = true;";
+
+function DeleteTestDataModal({ onConfirm, onCancel }) {
+  const [input, setInput] = useState("");
+  const [error, setError] = useState(null);
+
+  function submit(e) {
+    e.preventDefault();
+    if (input.trim() !== TEST_DELETE_QUERY) {
+      setError("El texto no coincide exactamente con el query de arriba. Revisa mayúsculas, espacios y el punto y coma final.");
+      return;
+    }
+    onConfirm();
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <form className="pnd-modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+        <h3 className="pnd-serif" style={{ margin: 0, fontSize: 16, color: "var(--sema-red)" }}>
+          ¿Seguro que quieres eliminar todos los datos de prueba?
+        </h3>
+        <p style={{ fontSize: 13, color: "var(--text-dim)", margin: 0 }}>
+          Esto borra los 50 pendientes, proyectos y notas de prueba (no toca nada que hayas agregado tú). No se puede
+          deshacer. Para confirmar, escribe exactamente este query abajo — así de paso ves cómo se vería:
+        </p>
+        <code style={{
+          display: "block", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 10,
+          padding: "10px 12px", fontSize: 12.5, color: "var(--sema-yellow)", wordBreak: "break-all",
+        }}>{TEST_DELETE_QUERY}</code>
+        <input
+          className="form-control form-control-sm" type="text" autoFocus value={input}
+          onChange={(e) => { setInput(e.target.value); if (error) setError(null); }}
+          placeholder="Escribe el query aquí"
+        />
+        {error && <p className="field-error">{error}</p>}
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+          <button type="submit" className="btn btn-primary" style={{ background: "var(--sema-red)", borderColor: "var(--sema-red)", color: "#fff" }}>
+            Eliminar definitivamente
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* ===========================================================
+   ForceGraph — D3 (v7): colisión, arrastre, foco, urgencia y clic
+   ===========================================================
+   Consume { nodes, links } tal como los entrega
+   useArbolViewModel, sin JSX ni DOM en esa capa. D3 se usa para
+   calcular físicas (forceSimulation) y para el gesto de arrastre
+   (d3.drag) — lo único verdaderamente imperativo, porque un
+   arrastre multi-evento (down/move/up, con inercia y umbral) no
+   tiene forma declarativa razonable en React. Todo lo demás
+   (círculos, líneas, texto) lo sigue dibujando React, leyendo
+   las posiciones que D3 va escribiendo en una copia local mutable
+   (mismo motivo que en la versión anterior: no ensuciar los
+   objetos inmutables que entrega el hook).
+=========================================================== */
+
+// Corta el texto para que nunca desborde el nodo — solo afecta
+// lo que se pinta, no el label real que guarda useArbolViewModel.
+function truncateLabel(label, maxChars) {
+  if (!label || label.length <= maxChars) return label;
+  return `${label.slice(0, maxChars - 1)}…`;
+}
+
+const LABEL_STYLE_BY_TYPE = {
+  sun: { maxChars: 16, fontSize: 13, fontWeight: 700 },
+  category: { maxChars: 16, fontSize: 11, fontWeight: 600 },
+  project: { maxChars: 14, fontSize: 9.5, fontWeight: 500 },
+  item: { maxChars: 12, fontSize: 8.5, fontWeight: 400 },
+};
+
+// Receta estándar de D3 para conectar el gesto de arrastre con la
+// simulación: al empezar, "recalienta" (alphaTarget) y fija el
+// nodo (fx/fy) a donde está el mouse; al soltar, lo libera para
+// que las fuerzas lo vuelvan a gobernar. dragStateRef.moved es lo
+// que nos permite distinguir un clic de un arrastre (mismo patrón
+// que ya usa FloatingNote con su bandera "moved").
+function makeDragBehavior(simulation, dragStateRef) {
+  function dragstarted(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    dragStateRef.current.moved = false;
+    d.fx = d.x;
+    d.fy = d.y;
+  }
+  function dragged(event, d) {
+    dragStateRef.current.moved = true;
+    d.fx = event.x;
+    d.fy = event.y;
+  }
+  function dragended(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null;
+    d.fy = null;
+  }
+  return d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended);
+}
+
+// Color/brillo de un item según el mismo agrupamiento que ya usa el
+// Tablero (tipificado), no la cercanía de la fecha límite — así el árbol y
+// el Tablero cuentan la misma historia con el mismo color de un vistazo.
+// Atrasados se tratan con la misma intensidad que "urgentes" porque ambos
+// son lo más crítico; esta_semana/siguientes_actividades titilan (ver
+// .node-pulse-green/.node-pulse-yellow) para leerse como "activo ahora".
+function itemGlowStyle(meta) {
+  if (!meta) return null;
+  if (meta.overdue || meta.tipificado === "urgentes") {
+    return { stroke: "var(--glow-urgent-red)", strokeWidth: 3, filter: "drop-shadow(0 0 7px var(--glow-urgent-red))", pulseClass: null };
+  }
+  if (meta.tipificado === "importantisimas") {
+    return { stroke: "var(--sema-red)", strokeWidth: 2, filter: "drop-shadow(0 0 4px var(--sema-red))", pulseClass: null };
+  }
+  if (meta.tipificado === "esta_semana") {
+    return { stroke: "var(--glow-active-green)", strokeWidth: 2, filter: null, pulseClass: "node-pulse-green" };
+  }
+  if (meta.tipificado === "siguientes_actividades") {
+    return { stroke: "var(--sema-yellow)", strokeWidth: 2, filter: null, pulseClass: "node-pulse-yellow" };
+  }
+  return null;
+}
+
+// Cuánto crece el nodo que se acaba de tocar (categoría o proyecto), para
+// que se note claramente cuál es sin necesitar leer la etiqueta primero.
+const FOCUS_GROWTH = 1.25;
+
+// El nodo enfocado (clic simple en categoría/proyecto) y toda su rama —
+// ancestros hasta el sol, y descendientes hasta los items — quedan "en
+// foco"; el resto se atenúa. null = sin foco, todo visible por igual.
+function computeFocusSet(nodes, focusedNodeId) {
+  if (!focusedNodeId) return null;
+  const byNodeId = {};
+  nodes.forEach((n) => { byNodeId[n.id] = n; });
+  const related = new Set();
+  let ancestor = byNodeId[focusedNodeId];
+  while (ancestor) { related.add(ancestor.id); ancestor = ancestor.parentId ? byNodeId[ancestor.parentId] : null; }
+  nodes.forEach((n) => {
+    let p = n;
+    while (p) {
+      if (p.id === focusedNodeId) { related.add(n.id); break; }
+      p = p.parentId ? byNodeId[p.parentId] : null;
+    }
+  });
+  return related;
+}
+
+function ForceGraph({ nodes, links, width, height, byId, onNodeClick, onNodeDoubleClick }) {
+  const svgRef = useRef(null);
+  const simNodesRef = useRef([]);
+  const simLinksRef = useRef([]);
+  const dragBehaviorRef = useRef(null);
+  const dragStateRef = useRef({ moved: false });
+  const [, bumpTick] = useState(0);
+  const [focusedNodeId, setFocusedNodeId] = useState(null);
+
+  useEffect(() => {
+    const simNodes = nodes.map((n) => ({ ...n }));
+    const simLinks = links.map((l) => ({ ...l }));
+    simNodesRef.current = simNodes;
+    simLinksRef.current = simLinks;
+
+    const simulation = d3.forceSimulation(simNodes)
+      .force("charge", d3.forceManyBody().strength(-140))
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("link", d3.forceLink(simLinks).id((d) => d.id).distance(50))
+      .force("collide", d3.forceCollide().radius((d) => d.radius + 4))
+      .on("tick", () => bumpTick((t) => t + 1));
+
+    dragBehaviorRef.current = makeDragBehavior(simulation, dragStateRef);
+
+    return () => simulation.stop();
+  }, [nodes, links, width, height]);
+
+  const simNodes = simNodesRef.current;
+  const simLinks = simLinksRef.current;
+  // parentId es estable entre ticks (viene tal cual del hook), así que el
+  // set de foco se puede calcular sobre "nodes" (los originales) en vez de
+  // recalcularlo por cada tick de la simulación.
+  const focusSet = useMemo(() => computeFocusSet(nodes, focusedNodeId), [nodes, focusedNodeId]);
+
+  function resolveOriginal(node) {
+    return (byId && byId[node.id]) || node;
+  }
+
+  // Clic en el sol = quitar el foco ("volver"). Clic en categoría/proyecto =
+  // enfocar su rama. Clic en un item = abrir su detalle (via onNodeClick).
+  // Si hubo arrastre, el clic que sigue al soltar se ignora (mismo patrón
+  // "moved" que ya usa FloatingNote). El objeto que se entrega hacia afuera
+  // es siempre el original del hook (vía byId), no el clon con x/y/vx/vy de
+  // la simulación — quien escuche onNodeClick no debería ver ruido físico.
+  function handleNodeClick(node) {
+    if (dragStateRef.current.moved) return;
+    const original = resolveOriginal(node);
+    if (original.type === "sun") setFocusedNodeId(null);
+    else if (original.type === "category" || original.type === "project") setFocusedNodeId(original.id);
+    if (typeof onNodeClick === "function") onNodeClick(original);
+  }
+
+  // Doble clic en categoría/proyecto: confirma el foco en esa rama y avisa
+  // hacia afuera (onNodeDoubleClick) para que quien lo use abra el formulario
+  // de "nuevo pendiente" ya preseleccionado ahí.
+  function handleNodeDoubleClick(node) {
+    if (dragStateRef.current.moved) return;
+    const original = resolveOriginal(node);
+    if (original.type !== "category" && original.type !== "project") return;
+    setFocusedNodeId(original.id);
+    if (typeof onNodeDoubleClick === "function") onNodeDoubleClick(original);
+  }
+
+  return (
+    <svg
+      ref={svgRef} width={width} height={height}
+      style={{ background: "#0b0f14", borderRadius: 12, maxWidth: "100%" }}
+      onClick={(e) => { if (e.target === svgRef.current) setFocusedNodeId(null); }}
+    >
+      <g stroke="#ffffff44" strokeWidth={1}>
+        {simLinks.map((l, i) => {
+          const s = l.source, t = l.target;
+          if (!s || !t || s.x == null || t.x == null) return null;
+          const inFocus = !focusSet || (focusSet.has(s.id) && focusSet.has(t.id));
+          return <line key={i} x1={s.x} y1={s.y} x2={t.x} y2={t.y} style={{ opacity: inFocus ? 1 : 0.12, transition: "opacity 220ms ease" }} />;
+        })}
+      </g>
+      <g>
+        {simNodes.map((n) => {
+          if (n.x == null) return null;
+          const inFocus = !focusSet || focusSet.has(n.id);
+          const isTouched = n.id === focusedNodeId;
+          const effectiveRadius = isTouched ? n.radius * FOCUS_GROWTH : n.radius;
+          const glow = n.type === "item" ? itemGlowStyle(n.meta) : null;
+          return (
+            <circle
+              key={n.id}
+              ref={(el) => {
+                // Se reasigna en cada tick — barato, porque la simulación
+                // se duerme sola (alpha decay) y d3 reemplaza el mismo
+                // listener con nombre en vez de acumularlo.
+                if (el && dragBehaviorRef.current) d3.select(el).datum(n).call(dragBehaviorRef.current);
+              }}
+              className={glow ? glow.pulseClass || undefined : undefined}
+              cx={n.x}
+              cy={n.y}
+              r={effectiveRadius}
+              fill={n.color}
+              stroke={glow ? glow.stroke : "none"}
+              strokeWidth={glow ? glow.strokeWidth : 0}
+              style={{
+                cursor: "grab",
+                opacity: inFocus ? 1 : 0.18,
+                transition: "opacity 220ms ease, r 220ms ease",
+                filter: glow && glow.filter ? glow.filter : undefined,
+              }}
+              onClick={() => handleNodeClick(n)}
+              onDoubleClick={() => handleNodeDoubleClick(n)}
+            />
+          );
+        })}
+      </g>
+      <g pointerEvents="none">
+        {simNodes.map((n) => {
+          if (n.x == null) return null;
+          const style = LABEL_STYLE_BY_TYPE[n.type] || LABEL_STYLE_BY_TYPE.item;
+          const inFocus = !focusSet || focusSet.has(n.id);
+          const effectiveRadius = n.id === focusedNodeId ? n.radius * FOCUS_GROWTH : n.radius;
+          return (
+            <text
+              key={n.id}
+              x={n.x}
+              y={n.y + effectiveRadius + 6 + style.fontSize}
+              textAnchor="middle"
+              fontSize={style.fontSize}
+              fontWeight={style.fontWeight}
+              fill="#EDEAE1"
+              stroke="#0b0f14"
+              strokeWidth={3}
+              paintOrder="stroke"
+              style={{ opacity: inFocus ? 1 : 0.18, transition: "opacity 220ms ease, y 220ms ease" }}
+            >
+              {truncateLabel(n.label, style.maxChars)}
+            </text>
+          );
+        })}
+      </g>
+    </svg>
+  );
+}
+</script>
+
+<script type="text/babel" data-presets="react">
+function ItemFormModal({ formState, currentMonthKey, nextMonthKey, currentWeekStart, nextWeekStart, items, projects, onEnsureProject, onCancel, onSubmit }) {
+  const editing = formState.mode === "edit";
+  const existing = formState.item;
+
+  const [name, setName] = useState(existing ? existing.name : "");
+  const [category, setCategory] = useState(existing ? existing.category : (formState.defaultCategory || CATEGORIES[0].id));
+  const categoryProjects = projects[category] || [];
+  const [projectChoice, setProjectChoice] = useState(() => {
+    if (existing && existing.projectId) return existing.projectId;
+    if (formState.defaultProject) return formState.defaultProject;
+    return "__none__";
+  });
+  const [newProjectName, setNewProjectName] = useState("");
+
+  const [tipificado, setTipificado] = useState(existing ? existing.tipificado : (formState.defaultTipificado || "sin_tipificar"));
+  const tipDef = getTipificado(tipificado);
+  const [deadline, setDeadline] = useState(existing && existing.deadline ? existing.deadline : "");
+  const [error, setError] = useState(null);
+
+  function handleCategoryChange(newCat) {
+    setCategory(newCat);
+    setProjectChoice("__none__");
+    setNewProjectName("");
+  }
+
+  function anchorFor(tip) {
+    if (tip === "este_mes") return { anchorMonth: currentMonthKey, anchorWeek: null };
+    if (tip === "proximo_mes") return { anchorMonth: nextMonthKey, anchorWeek: null };
+    if (tip === "esta_semana" || tip === "siguientes_actividades") return { anchorMonth: null, anchorWeek: currentWeekStart };
+    if (tip === "proxima_semana") return { anchorMonth: null, anchorWeek: nextWeekStart };
+    return { anchorMonth: null, anchorWeek: null };
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!name.trim()) { setError("Escribe un nombre para el pendiente."); return; }
+
+    let projectId = null;
+    if (projectChoice === "__new__") {
+      if (!newProjectName.trim()) { setError("Escribe un nombre para el nuevo proyecto, o elige 'Sin proyecto' arriba."); return; }
+      projectId = onEnsureProject(category, newProjectName.trim());
+    } else if (projectChoice !== "__none__") {
+      projectId = projectChoice;
+    }
+
+    if (tipDef.needsDeadline && !deadline) {
+      setError(`"${tipDef.label}" necesita una fecha límite de entrega.`);
+      return;
+    }
+
+    let anchorMonth = existing ? existing.anchorMonth : null;
+    let anchorWeek = existing ? existing.anchorWeek : null;
+    const tipificadoChanged = !existing || existing.tipificado !== tipificado;
+    if (tipificadoChanged) {
+      const anchors = anchorFor(tipificado);
+      anchorMonth = anchors.anchorMonth;
+      anchorWeek = anchors.anchorWeek;
+    }
+
+    if (tipDef.cap != null) {
+      const count = countActiveForCap(items, {
+        category, projectId, tipificado, anchorMonth, anchorWeek,
+        excludeId: existing ? existing.id : null,
+      });
+      const alreadyHadThisSlot = existing && !tipificadoChanged;
+      if (!alreadyHadThisSlot && count >= tipDef.cap) {
+        setError(`Ya tienes ${tipDef.cap} pendientes de "${tipDef.label}" en ${projectId ? "este proyecto" : "esta categoría"}. Completa, elimina o mueve alguno antes de agregar otro.`);
+        return;
+      }
+    }
+
+    setError(null);
+    onSubmit({
+      name: name.trim(), category, projectId, tipificado,
+      anchorMonth, anchorWeek, deadline: tipDef.needsDeadline ? deadline : null,
+    });
+  }
+
+  const resolvedProjectId = projectChoice === "__new__" || projectChoice === "__none__" ? null : projectChoice;
+  const capCount = tipDef.cap != null
+    ? countActiveForCap(items, { category, projectId: resolvedProjectId, tipificado, ...anchorFor(tipificado), excludeId: existing ? existing.id : null })
+    : null;
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <form className="pnd-modal" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <h3 className="pnd-serif" style={{ margin: 0, fontSize: 17 }}>{editing ? "Editar pendiente" : "Nuevo pendiente"}</h3>
+
+        <div className="field">
+          <label>Nombre</label>
+          <input className="form-control form-control-sm" type="text" value={name} onChange={(e) => { setName(e.target.value); if (error) setError(null); }} placeholder="¿Qué tienes que hacer?" autoFocus />
+        </div>
+
+        <div className="field">
+          <label>Categoría</label>
+          <select className="form-select form-select-sm" value={category} onChange={(e) => handleCategoryChange(e.target.value)}>
+            {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </div>
+
+        <div className="field">
+          <label>Proyecto (opcional)</label>
+          <select className="form-select form-select-sm" value={projectChoice} onChange={(e) => setProjectChoice(e.target.value)}>
+            <option value="__none__">Sin proyecto (directo en la categoría)</option>
+            {categoryProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <option value="__new__">+ Nuevo proyecto…</option>
+          </select>
+          {projectChoice === "__new__" && (
+            <input className="form-control form-control-sm" type="text" placeholder="Nombre del proyecto" value={newProjectName}
+              onChange={(e) => { setNewProjectName(e.target.value); if (error) setError(null); }} style={{ marginTop: 8 }} />
+          )}
+        </div>
+
+        <div className="field">
+          <label>Tipificado</label>
+          <select className="form-select form-select-sm" value={tipificado} onChange={(e) => { setTipificado(e.target.value); if (error) setError(null); }}>
+            {TIPIFICADOS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+          {tipDef.cap != null && <span className="cap-note">{capCount}/{tipDef.cap} usados en esta {resolvedProjectId ? "proyecto" : "categoría"}</span>}
+        </div>
+
+        {tipDef.needsDeadline && (
+          <div className="field">
+            <label>Fecha límite de entrega</label>
+            <input className="form-control form-control-sm" type="date" value={deadline} onChange={(e) => { setDeadline(e.target.value); if (error) setError(null); }} />
+          </div>
+        )}
+
+        {error && <p className="field-error">{error}</p>}
+
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+          <button type="submit" className="btn btn-primary">{editing ? "Guardar cambios" : "Agregar"}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+</script>
+
+<script type="text/babel" data-presets="react">
+// Reordenar arrastrando: solo los pendientes sin fecha límite son
+// arrastrables (los que sí tienen fecha se ordenan solos por cercanía, ver
+// bucket() en TableroView). draggingId/dragOverId son puramente visuales
+// (opacidad del que se arrastra, línea de inserción sobre el que está
+// debajo del cursor); quien de verdad mueve el dato es onReorder, que sube
+// hasta reorderItem en App.
+function TableroColumn({ tip, list, onReorder, todayStr, projects }) {
+  const capLabel = tip.cap != null ? `${list.length}/${tip.cap}` : `${list.length}`;
+  const [draggingId, setDraggingId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+
+  return (
+    <div className={`tab-col ${tip.id === "urgentes" || tip.id === "importantisimas" ? "special" : ""}`}>
+      <div className="tab-col-head">
+        <h3>{TIPIFICADO_ICON[tip.id]} {tip.label}</h3>
+        <span>{capLabel}</span>
+      </div>
+      <div className="tab-col-list">
+        {list.length === 0 ? (
+          <div className="empty-state" style={{ margin: 8 }}>Vacío por ahora.</div>
+        ) : (
+          list.map((item, idx) => {
+            const cat = getCategory(item.category);
+            const proj = projectNameFor(projects, item);
+            const color = item.deadline
+              ? (deadlineChipClass(item.deadline, todayStr).includes("soon") ? "var(--sema-red)" : deadlineChipClass(item.deadline, todayStr).includes("week") ? "var(--sema-yellow)" : "var(--sema-green)")
+              : (idx < 2 ? "var(--sema-red)" : idx < 5 ? "var(--sema-yellow)" : "var(--sema-green)");
+            const reorderable = !item.deadline;
+            return (
+              <div
+                className={`tab-row ${dragOverId === item.id && draggingId && draggingId !== item.id ? "drag-over" : ""}`}
+                key={item.id}
+                draggable={reorderable}
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", item.id);
+                  setDraggingId(item.id);
+                }}
+                onDragOver={(e) => {
+                  if (!reorderable || !draggingId) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  setDragOverId(item.id);
+                }}
+                onDragLeave={() => setDragOverId((prev) => (prev === item.id ? null : prev))}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const draggedId = e.dataTransfer.getData("text/plain");
+                  if (draggedId && draggedId !== item.id) onReorder(draggedId, item.id);
+                  setDraggingId(null);
+                  setDragOverId(null);
+                }}
+                onDragEnd={() => { setDraggingId(null); setDragOverId(null); }}
+                style={{ opacity: draggingId === item.id ? 0.35 : 1 }}
+              >
+                <span className="sema-dot" style={{ background: color, color }} />
+                <div className="tab-row-body">
+                  <div className="tab-row-name">{item.name}</div>
+                  <div className="tab-row-meta">
+                    <span className="badge chip" style={{ borderColor: cat.color, color: cat.color }}>{cat.label}</span>
+                    {proj && <span className="badge chip">{proj}</span>}
+                    {item.deadline && <span className={deadlineChipClass(item.deadline, todayStr)}>vence {shortDateStr(item.deadline)}</span>}
+                  </div>
+                </div>
+                {reorderable && <span className="drag-handle" aria-hidden="true">⠿</span>}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TableroView({ items, projects, currentMonthKey, currentWeekStart, onReorder, onRenew, onEditOverdue }) {
+  const todayStr = `${currentMonthKey}-01`;
+  const overdue = items.filter((i) => !i.done && isOverdue(i, currentMonthKey, currentWeekStart));
+
+  function bucket(tipId) {
+    return items
+      .filter((i) => !i.done && i.tipificado === tipId && !isOverdue(i, currentMonthKey, currentWeekStart))
+      .sort((a, b) => {
+        if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline);
+        return (a.order || 0) - (b.order || 0);
+      });
+  }
+
+  const [showOverdue, setShowOverdue] = useState(true);
+
+  return (
+    <div>
+      {overdue.length > 0 && (
+        <div className="alert-banner" onClick={() => setShowOverdue((s) => !s)}>
+          <div className="alert-banner-head">⚠ Tienes {overdue.length} pendiente{overdue.length === 1 ? "" : "s"} atrasado{overdue.length === 1 ? "" : "s"} {showOverdue ? "▲" : "▼"}</div>
+          {showOverdue && (
+            <div className="alert-list">
+              {overdue.map((item) => (
+                <div className="alert-item" key={item.id}>
+                  <div className="alert-item-body">
+                    <div>{item.name}</div>
+                    <div className="alert-item-tag">
+                      {item.tipificado === "este_mes" ? `Atrasado de ${monthLabel(item.anchorMonth)}` : `Atrasado de la semana del ${shortDateStr(item.anchorWeek)}`}
+                    </div>
+                  </div>
+                  <button className="btn icon-btn" onClick={(e) => { e.stopPropagation(); onRenew(item.id); }} title="Actualizar a la actual">↻</button>
+                  <button className="btn icon-btn" onClick={(e) => { e.stopPropagation(); onEditOverdue(item); }} aria-label="Editar">✎</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <p className="tipificado-help">Los que tienen fecha se ordenan solos por cercanía. Los demás los ordenas tú arrastrándolos.</p>
+
+      <div className="tablero-row-label">Semana</div>
+      <div className="tablero-grid cols-3">
+        <TableroColumn tip={getTipificado("esta_semana")} list={bucket("esta_semana")} onReorder={onReorder} todayStr={todayStr} projects={projects} />
+        <TableroColumn tip={getTipificado("siguientes_actividades")} list={bucket("siguientes_actividades")} onReorder={onReorder} todayStr={todayStr} projects={projects} />
+        <TableroColumn tip={getTipificado("proxima_semana")} list={bucket("proxima_semana")} onReorder={onReorder} todayStr={todayStr} projects={projects} />
+      </div>
+
+      <div className="tablero-row-label">Mes</div>
+      <div className="tablero-grid cols-2">
+        <TableroColumn tip={getTipificado("este_mes")} list={bucket("este_mes")} onReorder={onReorder} todayStr={todayStr} projects={projects} />
+        <TableroColumn tip={getTipificado("proximo_mes")} list={bucket("proximo_mes")} onReorder={onReorder} todayStr={todayStr} projects={projects} />
+      </div>
+
+      <div className="tablero-row-label">Sin fecha fija</div>
+      <div className="tablero-grid cols-wrap">
+        <TableroColumn tip={getTipificado("obligatorios")} list={bucket("obligatorios")} onReorder={onReorder} todayStr={todayStr} projects={projects} />
+        <TableroColumn tip={getTipificado("quiero_hacer")} list={bucket("quiero_hacer")} onReorder={onReorder} todayStr={todayStr} projects={projects} />
+        <TableroColumn tip={getTipificado("sin_tipificar")} list={bucket("sin_tipificar")} onReorder={onReorder} todayStr={todayStr} projects={projects} />
+        <TableroColumn tip={getTipificado("urgentes")} list={bucket("urgentes")} onReorder={onReorder} todayStr={todayStr} projects={projects} />
+        <TableroColumn tip={getTipificado("importantisimas")} list={bucket("importantisimas")} onReorder={onReorder} todayStr={todayStr} projects={projects} />
+      </div>
+    </div>
+  );
+}
+</script>
+
+<script type="text/babel" data-presets="react">
+function App() {
+  const [items, setItems] = useState([]);
+  const [projects, setProjects] = useState({});
+  const [notes, setNotes] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+  const [tab, setTab] = useState("tree");
+  const [detailItem, setDetailItem] = useState(null);
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [pendingNoteSpot, setPendingNoteSpot] = useState(null);
+  const pendingSpotTimeoutRef = useRef(null);
+  const [showDeleteTestModal, setShowDeleteTestModal] = useState(false);
+  const [formState, setFormState] = useState(null);
+  const fileInputRef = useRef(null);
+  const reconciledRef = useRef(false);
+  const canvasRef = useRef(null);
+
+  const { year, month, day } = useMemo(() => todayInMedellin(), []);
+  const currentMonthKey = useMemo(() => monthKey(year, month), [year, month]);
+  const nextMonthKey = useMemo(() => addMonthKey(currentMonthKey, 1), [currentMonthKey]);
+  const currentWeekStart = useMemo(() => mondayOf(year, month, day), [year, month, day]);
+  const nextWeekStart = useMemo(() => addDaysToDateStr(currentWeekStart, 7), [currentWeekStart]);
+  // Capa de datos del Árbol: la vista (ForceGraph, con D3) solo consume
+  // { nodes, links, byId } de aquí, nunca toca items/projects directamente.
+  const arbolViewModel = useArbolViewModel(items, projects, currentMonthKey, currentWeekStart);
+
+  // Fondo de partículas (constelación) — se inicializa una sola vez, fuera
+  // del ciclo de React; tsParticles maneja su propio loop de animación.
+  useEffect(() => {
+    if (!window.tsParticles) return;
+    let cancelled = false;
+    window.tsParticles.load({
+      id: "tsparticles",
+      options: {
+        fpsLimit: 60,
+        detectRetina: true,
+        background: { color: { value: "transparent" } },
+        particles: {
+          number: { value: 50, density: { enable: true, area: 900 } },
+          color: { value: ["#E8A33D", "#4FA6A0", "#8C6FC9", "#EDEAE1"] },
+          opacity: { value: { min: 0.15, max: 0.45 } },
+          size: { value: { min: 1, max: 2.2 } },
+          move: { enable: true, speed: 0.3, direction: "none", random: true, outModes: { default: "out" } },
+          links: { enable: true, distance: 120, color: "#EDEAE1", opacity: 0.12, width: 1 },
+        },
+        interactivity: {
+          events: { onHover: { enable: true, mode: "grab" }, resize: true },
+          modes: { grab: { distance: 140, links: { opacity: 0.35 } } },
+        },
+      },
+    }).catch(() => { /* si el fondo no carga, la app sigue funcionando igual */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const [realDataV2Injected, setRealDataV2Injected] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let loadedItems = [], loadedProjects = {}, loadedNotes = [], flag = false;
+      try {
+        const res = await window.storage.get(STORAGE_KEY, false);
+        if (res && res.value) {
+          const parsed = JSON.parse(res.value);
+          loadedItems = parsed.items || [];
+          loadedProjects = parsed.projects || {};
+          loadedNotes = parsed.notes || [];
+          flag = !!parsed[REAL_DATA_V2_FLAG_NAME];
+        }
+      } catch (e) { /* sin datos guardados aún */ }
+
+      if (!flag) {
+        // Migración de una sola vez: quita los datos de prueba (seed), quita
+        // la v1 (categorías adivinadas) si ya se había cargado, e inyecta la v2.
+        loadedItems = loadedItems.filter((i) => !i.seed && !KNOWN_V1_NAMES.includes(i.name));
+        const cleanProjects = {};
+        Object.entries(loadedProjects).forEach(([catId, list]) => { cleanProjects[catId] = (list || []).filter((p) => !p.seed); });
+        loadedNotes = loadedNotes.filter((n) => !n.seed);
+
+        const real = buildRealDataV2({ currentMonthKey, nextMonthKey, currentWeekStart, nextWeekStart });
+        loadedItems = [...loadedItems, ...real.items];
+        Object.entries(real.projects).forEach(([catId, list]) => {
+          cleanProjects[catId] = [...(cleanProjects[catId] || []), ...list];
+        });
+        loadedProjects = cleanProjects;
+        flag = true;
+      }
+
+      if (!cancelled) {
+        setItems(loadedItems);
+        setProjects(loadedProjects);
+        setNotes(loadedNotes);
+        setRealDataV2Injected(flag);
+        setLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Reconciliación (promoción próximo->actual) una sola vez por sesión, tras cargar.
+  useEffect(() => {
+    if (!loaded || reconciledRef.current) return;
+    reconciledRef.current = true;
+    setItems((prev) => reconcile(prev, currentMonthKey, currentWeekStart));
+  }, [loaded, currentMonthKey, currentWeekStart]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    (async () => {
+      try {
+        await window.storage.set(STORAGE_KEY, JSON.stringify({ items, projects, notes, [REAL_DATA_V2_FLAG_NAME]: realDataV2Injected }), false);
+        setSaveError(false);
+      } catch (e) { setSaveError(true); }
+    })();
+  }, [items, projects, notes, realDataV2Injected, loaded]);
+
+  const addItem = useCallback((data) => {
+    setItems((prev) => {
+      const monthActive = prev.filter((i) => i.tipificado === data.tipificado && !i.done);
+      const maxOrder = monthActive.reduce((m, i) => Math.max(m, i.order || 0), -1);
+      return [...prev, { id: uid(), ...data, order: maxOrder + 1, done: false, createdAt: Date.now() }];
+    });
+  }, []);
+  const updateItem = useCallback((id, patch) => {
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+  }, []);
+  const deleteItem = useCallback((id) => setItems((prev) => prev.filter((i) => i.id !== id)), []);
+  const toggleDone = useCallback((id) => setItems((prev) => prev.map((i) => (i.id === id ? { ...i, done: !i.done } : i))), []);
+
+  // Reordenar por arrastre (reemplaza a las flechas ▲▼): mueve draggedId a la
+  // posición de targetId dentro de su mismo grupo (mismo tipificado, sin
+  // fecha límite, no completados — los mismos "siblings" que ya calculaba el
+  // viejo moveItem) y resecuencia el order de todo el grupo del 0 en
+  // adelante, en vez de solo intercambiar dos vecinos.
+  const reorderItem = useCallback((draggedId, targetId) => {
+    if (draggedId === targetId) return;
+    setItems((prev) => {
+      const dragged = prev.find((i) => i.id === draggedId);
+      const target = prev.find((i) => i.id === targetId);
+      if (!dragged || !target || dragged.tipificado !== target.tipificado) return prev;
+
+      const siblings = prev
+        .filter((i) => i.tipificado === dragged.tipificado && !i.done && !i.deadline)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      const fromIdx = siblings.findIndex((i) => i.id === draggedId);
+      const toIdx = siblings.findIndex((i) => i.id === targetId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+
+      const reordered = siblings.filter((i) => i.id !== draggedId);
+      reordered.splice(toIdx, 0, dragged);
+
+      const orderById = {};
+      reordered.forEach((i, idx) => { orderById[i.id] = idx; });
+      return prev.map((i) => (orderById[i.id] != null ? { ...i, order: orderById[i.id] } : i));
+    });
+  }, []);
+
+  const renewItem = useCallback((id) => {
+    setItems((prev) => prev.map((i) => {
+      if (i.id !== id) return i;
+      if (i.tipificado === "este_mes") return { ...i, anchorMonth: currentMonthKey };
+      if (i.tipificado === "esta_semana" || i.tipificado === "siguientes_actividades") return { ...i, anchorWeek: currentWeekStart };
+      return i;
+    }));
+  }, [currentMonthKey, currentWeekStart]);
+
+  // ---- Notas flotantes tipo Post-it — se necesitan 2 toques (o 1 doble
+  // clic rápido) sobre el mismo lugar para crear una. Ya no se pueden
+  // arrastrar ni asignar a una categoría por drag — eso queda para una
+  // fase futura con un menú de clic derecho.
+  function handleCanvasClick(e) {
+    const tag = e.target.tagName ? e.target.tagName.toLowerCase() : "";
+    if (tag === "circle" || tag === "text" || e.target.closest(".floating-note, button, input, textarea, select")) {
+      if (pendingNoteSpot) { clearTimeout(pendingSpotTimeoutRef.current); setPendingNoteSpot(null); }
+      return;
+    }
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = Math.max(0, e.clientX - rect.left - 66);
+    const y = Math.max(0, e.clientY - rect.top - 29);
+
+    if (pendingNoteSpot) {
+      clearTimeout(pendingSpotTimeoutRef.current);
+      const id = uid();
+      setNotes((prev) => [...prev, { id, text: "", x: pendingNoteSpot.x, y: pendingNoteSpot.y }]);
+      setEditingNoteId(id);
+      setPendingNoteSpot(null);
+    } else {
+      setPendingNoteSpot({ x, y });
+      pendingSpotTimeoutRef.current = setTimeout(() => setPendingNoteSpot(null), 3000);
+    }
+  }
+  function commitNoteText(id, text) {
+    const trimmed = text.trim();
+    if (!trimmed) setNotes((prev) => prev.filter((n) => n.id !== id));
+    else setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, text: trimmed } : n)));
+    setEditingNoteId(null);
+  }
+  function deleteNote(id) { setNotes((prev) => prev.filter((n) => n.id !== id)); }
+  function startEditNote(id) { setEditingNoteId(id); }
+
+  const createProject = useCallback((categoryId, name) => {
+    const id = uid();
+    setProjects((prev) => ({ ...prev, [categoryId]: [...(prev[categoryId] || []), { id, name }] }));
+    return id;
+  }, []);
+  const deleteProject = useCallback((categoryId, projectId) => {
+    setProjects((prev) => ({ ...prev, [categoryId]: (prev[categoryId] || []).filter((p) => p.id !== projectId) }));
+  }, []);
+
+  const hasSeedData = items.some((i) => i.seed) || notes.some((n) => n.seed) || Object.values(projects).some((list) => list.some((p) => p.seed));
+
+  function insertTestData() {
+    const seed = buildTestData({ currentMonthKey, nextMonthKey, currentWeekStart, nextWeekStart });
+    setItems((prev) => [...prev.filter((i) => !i.seed), ...seed.items]);
+    setProjects((prev) => {
+      const next = { ...prev };
+      Object.entries(seed.seedProjects).forEach(([catId, list]) => {
+        next[catId] = [...(prev[catId] || []).filter((p) => !p.seed), ...list];
+      });
+      return next;
+    });
+    setNotes((prev) => [...prev.filter((n) => !n.seed), ...seed.notes]);
+  }
+
+  function deleteTestData() {
+    setItems((prev) => prev.filter((i) => !i.seed));
+    setProjects((prev) => {
+      const next = {};
+      Object.entries(prev).forEach(([catId, list]) => { next[catId] = list.filter((p) => !p.seed); });
+      return next;
+    });
+    setNotes((prev) => prev.filter((n) => !n.seed));
+    setShowDeleteTestModal(false);
+  }
+
+  function handleExport() {
+    const payload = JSON.stringify({ items, projects, notes, [REAL_DATA_V2_FLAG_NAME]: realDataV2Injected }, null, 2);
+    const blob = new Blob([payload], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mis-pendientes-${currentMonthKey}-${day}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  function handleImportClick() { fileInputRef.current && fileInputRef.current.click(); }
+  function handleImportFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (!window.confirm("Esto reemplaza tus pendientes actuales por los del archivo de respaldo. ¿Continuar?")) return;
+        setItems(parsed.items || []);
+        setProjects(parsed.projects || {});
+        setNotes(parsed.notes || []);
+        setRealDataV2Injected(!!parsed[REAL_DATA_V2_FLAG_NAME]);
+      } catch (err) { window.alert("Ese archivo no parece un respaldo válido."); }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  if (!loaded) {
+    return <div className="pnd-app"><div style={{ padding: 40, textAlign: "center", color: "var(--text-dim)" }}>Cargando tus pendientes…</div></div>;
+  }
+
+  return (
+    <div className="pnd-app">
+      <header className="pnd-header">
+        <h1>Mis Pendientes</h1>
+        <p className="pnd-sub">{saveError ? "No se pudo guardar el último cambio — revisa tu conexión." : "Un árbol para todo lo que tienes por hacer"}</p>
+      </header>
+
+      <nav className="pnd-tabs">
+        <button className={`pnd-tab ${tab === "tree" ? "active" : ""}`} onClick={() => setTab("tree")}>🌳 Árbol</button>
+        <button className={`pnd-tab ${tab === "tablero" ? "active" : ""}`} onClick={() => setTab("tablero")}>🗂️ Tablero</button>
+      </nav>
+
+      <div className="backup-bar">
+        <button className="btn btn-ghost" onClick={handleExport}>⬇ Descargar respaldo</button>
+        <button className="btn btn-ghost" onClick={handleImportClick}>⬆ Restaurar respaldo</button>
+        <input type="file" accept="application/json" ref={fileInputRef} style={{ display: "none" }} onChange={handleImportFile} />
+        <button className="btn btn-ghost" onClick={insertTestData}>🧪 {hasSeedData ? "Regenerar" : "Insertar"} 50 datos de prueba</button>
+        {hasSeedData && (
+          <button className="btn btn-ghost" onClick={() => setShowDeleteTestModal(true)} style={{ color: "var(--sema-red)", borderColor: "var(--sema-red)" }}>
+            🗑 Eliminar datos de prueba
+          </button>
+        )}
+      </div>
+
+      {showDeleteTestModal && (
+        <DeleteTestDataModal onConfirm={deleteTestData} onCancel={() => setShowDeleteTestModal(false)} />
+      )}
+
+      <main className="pnd-main">
+        {tab === "tree" && (
+          <div>
+            <p className="canvas-hint">
+              Toca cualquier espacio vacío del lienzo (y de nuevo para confirmar) para dejar una nota rápida. Clic en un
+              pendiente para ver su detalle. Clic en una categoría o proyecto para enfocar su rama; doble clic para
+              agregar un pendiente ahí mismo. Clic en el sol para quitar el foco.
+            </p>
+            <div className="cosmos-stage tree-canvas" ref={canvasRef} onClick={handleCanvasClick}>
+              <ForceGraph
+                nodes={arbolViewModel.nodes} links={arbolViewModel.links} byId={arbolViewModel.byId}
+                width={880} height={560}
+                onNodeClick={(node) => {
+                  if (node.type !== "item") return;
+                  const item = items.find((i) => i.id === node.itemId);
+                  if (item) setDetailItem(item);
+                }}
+                onNodeDoubleClick={(node) => {
+                  if (node.type === "category") {
+                    setFormState({ mode: "create", defaultCategory: node.categoryId, defaultProject: null });
+                  } else if (node.type === "project") {
+                    setFormState({ mode: "create", defaultCategory: node.categoryId, defaultProject: node.projectId });
+                  }
+                }}
+              />
+
+              {pendingNoteSpot && (
+                <div className="note-spot-hint" style={{ left: pendingNoteSpot.x, top: pendingNoteSpot.y }}>
+                  Toca de nuevo<br />para anotar aquí
+                </div>
+              )}
+
+              {notes.map((note) => (
+                <FloatingNote key={note.id} note={note} editing={editingNoteId === note.id}
+                  onStartEdit={startEditNote} onCommit={(text) => commitNoteText(note.id, text)} onDelete={deleteNote} />
+              ))}
+            </div>
+          </div>
+        )}
+        {tab === "tablero" && (
+          <TableroView
+            items={items} projects={projects} currentMonthKey={currentMonthKey} currentWeekStart={currentWeekStart}
+            onReorder={reorderItem} onRenew={renewItem}
+            onEditOverdue={(item) => setFormState({ mode: "edit", item })}
+          />
+        )}
+      </main>
+
+      {detailItem && (
+        <ItemDetailPopover
+          item={detailItem} projects={projects} currentMonthKey={currentMonthKey} currentWeekStart={currentWeekStart}
+          onClose={() => setDetailItem(null)}
+          onToggleDone={(id) => { toggleDone(id); setDetailItem(null); }}
+          onEdit={(item) => { setDetailItem(null); setFormState({ mode: "edit", item }); }}
+          onDelete={(id) => { deleteItem(id); setDetailItem(null); }}
+          onRenew={(id) => { renewItem(id); setDetailItem(null); }}
+        />
+      )}
+
+      {formState && (
+        <ItemFormModal
+          formState={formState}
+          currentMonthKey={currentMonthKey} nextMonthKey={nextMonthKey}
+          currentWeekStart={currentWeekStart} nextWeekStart={nextWeekStart}
+          items={items} projects={projects} onEnsureProject={createProject}
+          onCancel={() => setFormState(null)}
+          onSubmit={(data) => {
+            if (formState.mode === "edit") updateItem(formState.item.id, data);
+            else addItem(data);
+            setFormState(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
