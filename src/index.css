@@ -224,8 +224,14 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
 /* Árbol: ForceGraph (D3 + React) dentro de este mismo lienzo. Altura real
    (no solo min-height) para que ForceGraph pueda medir el contenedor con
    ResizeObserver y llenarlo, tanto en modo normal como expandido. */
-.tree-canvas { position: relative; padding: 12px 10px; height: 65vh; min-height: 420px; }
+.tree-canvas { position: relative; padding: 12px 10px; height: 75vh; min-height: 460px; }
 .cosmos-stage { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+
+/* Envuelve el texto de ayuda + el lienzo — las notas (ver App.jsx) se
+   renderizan como hijas directas de este wrapper, no del lienzo, así que
+   pueden arrastrarse también sobre el texto de arriba sin que el
+   overflow:hidden del lienzo las recorte. */
+.tree-tab-area { position: relative; }
 
 .tree-expand-btn { position: absolute; top: 10px; right: 10px; z-index: 30; }
 .tree-zoom-controls { position: absolute; bottom: 10px; left: 10px; z-index: 30; display: flex; flex-direction: column; gap: 4px; }
@@ -237,13 +243,15 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
 
 /* "Pantalla completa" propia (no la API nativa del navegador): un overlay
    fijo que tapa toda la ventana con el mismo fondo de la app, para no
-   pelear con modales ni con el gesto de salir de la Fullscreen API real. */
+   pelear con modales ni con el gesto de salir de la Fullscreen API real.
+   Antes quedaba un margen de 14px + el texto de ayuda arriba, así que nunca
+   se sentía "totalmente" completa — ahora es borde a borde, el texto de
+   ayuda se quitó y el lienzo ocupa el 100% del alto/ancho disponible. */
 .tree-expanded {
   position: fixed; inset: 0; z-index: 60; background: var(--bg, #141C17);
-  display: flex; flex-direction: column; padding: 14px 14px 0;
+  display: flex; flex-direction: column; padding: 0;
 }
-.tree-expanded .canvas-hint { flex-shrink: 0; }
-.tree-expanded .cosmos-stage.tree-canvas { flex: 1; height: auto; min-height: 0; padding: 12px 4px; }
+.tree-expanded .cosmos-stage.tree-canvas { flex: 1; height: auto; min-height: 0; padding: 0; }
 
 /* Solo el filter (glow) titila — la opacidad se deja libre para que el
    atenuado por foco (ForceGraph) siga funcionando aunque el nodo titile. */
@@ -263,6 +271,35 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
 .node-pulse-yellow { animation: node-pulse-yellow 1.6s ease-in-out infinite; }
 .node-pulse-red { animation: node-pulse-red 1.6s ease-in-out infinite; }
 
+/* El sol respira despacio y siempre — zona neutra (8-10 pendientes de esta
+   semana, ver sunLoadStyle en ForceGraph): solo para que el centro del árbol
+   se sienta vivo en reposo, sin ninguna lectura de urgencia. Los otros dos
+   titileos (verde/amarillo, misma cadencia lenta y la misma amplitud
+   pequeña — "sutil y elegante", no el pulso agresivo de arriba) sí leen
+   como una señal: verde = semana sana (3-7), amarillo = semana sin
+   preparar (2 o menos). Más de 10 queda en rojo fijo, sin titilar — ya se
+   nota solo por el color. */
+@keyframes node-breathe-sun {
+  0%, 100% { filter: drop-shadow(0 0 10px rgba(245,214,123,0.4)); }
+  50% { filter: drop-shadow(0 0 20px rgba(245,214,123,0.65)); }
+}
+@keyframes node-breathe-sun-green {
+  0%, 100% { filter: drop-shadow(0 0 10px rgba(74,222,128,0.4)); }
+  50% { filter: drop-shadow(0 0 20px rgba(74,222,128,0.65)); }
+}
+@keyframes node-breathe-sun-yellow {
+  0%, 100% { filter: drop-shadow(0 0 10px rgba(234,197,79,0.4)); }
+  50% { filter: drop-shadow(0 0 20px rgba(234,197,79,0.65)); }
+}
+.node-pulse-sun { animation: node-breathe-sun 4.2s ease-in-out infinite; }
+.node-pulse-sun-green { animation: node-breathe-sun-green 4.2s ease-in-out infinite; }
+.node-pulse-sun-yellow { animation: node-breathe-sun-yellow 4.2s ease-in-out infinite; }
+
+/* Realce sutil al pasar el mouse sobre un ítem compacto (punto chico) —
+   nada de layout, solo un poco más de brillo/tamaño para que la red se
+   sienta receptiva al cursor y no un dibujo estático. */
+.item-dot-compact:hover { transform: scale(1.5); filter: brightness(1.35); }
+
 /* Reemplaza la miniatura nativa de drag (apagada con setDragImage) — sigue
    al cursor de verdad vía clientX/clientY del evento "drag". */
 .drag-ghost {
@@ -273,11 +310,14 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
 }
 
 .floating-note {
-  position: absolute; width: 132px; min-height: 58px; background: #F4E4B8; color: #3A2E1A;
+  position: absolute; width: 132px; min-height: 58px; color: #3A2E1A;
   border-radius: 3px 14px 14px 14px; box-shadow: 0 8px 18px rgba(0,0,0,.4);
   padding: 9px 10px; font-size: 12.5px; line-height: 1.3; font-family: 'Work Sans', sans-serif;
   cursor: grab; user-select: none; touch-action: none; z-index: 25; word-break: break-word;
+  transition: box-shadow .18s ease, transform .18s cubic-bezier(.34,1.56,.64,1),
+    width .2s ease, min-height .2s ease, border-radius .2s ease;
 }
+.floating-note:active { cursor: grabbing; transform: scale(1.03); box-shadow: 0 14px 26px rgba(0,0,0,.5); }
 .floating-note.editing { cursor: text; }
 .floating-note textarea {
   width: 100%; min-height: 40px; background: transparent; border: none; resize: none;
@@ -288,4 +328,44 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
   background: #3A2E1A; color: #F4E4B8; font-size: 11px; border: none; cursor: pointer;
   display: flex; align-items: center; justify-content: center; padding: 0;
 }
-.canvas-hint { text-align: center; color: var(--text-dim); font-size: 12.5px; margin: 4px 0 0; }
+
+/* Notas colapsadas (doble clic): en vez de encogerse en el mismo lugar
+   donde estaban (lo que en la práctica las mandaba fuera de la vista, cerca
+   del borde inferior), se apilan en un riel fijo pegado al lado derecho —
+   siempre a la vista, sin superponerse entre sí. Empieza debajo del botón
+   de pantalla completa (esquina superior derecha) para no taparlo. */
+.notes-rail {
+  position: absolute; top: 56px; right: 14px; z-index: 26;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  max-height: calc(100% - 70px); overflow-y: auto; overflow-x: hidden;
+}
+.note-chip {
+  max-width: 180px; min-width: 64px; padding: 8px 12px; color: #3A2E1A;
+  font-size: 12px; font-weight: 600; font-family: 'Work Sans', sans-serif;
+  border-radius: 2px 12px 12px 12px; cursor: pointer; user-select: none;
+  box-shadow: 0 0 0 1.5px rgba(255,255,255,0.55), 0 6px 16px rgba(0,0,0,.5);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.note-chip:hover { transform: scale(1.04) translateX(-2px); }
+.note-chip-title {
+  display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Menú de clic derecho: colores + eliminar. position:fixed y coordenadas de
+   pantalla (clientX/Y) para que nunca quede recortado por el overflow:hidden
+   del lienzo, sin importar el zoom/paneo del árbol debajo. */
+.note-menu-backdrop { position: fixed; inset: 0; z-index: 90; background: transparent; }
+.note-color-menu {
+  position: fixed; z-index: 95; display: flex; align-items: center; gap: 6px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 8px; box-shadow: 0 10px 24px rgba(0,0,0,.5); transform: translate(-10px, 6px);
+}
+.note-color-swatch {
+  width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.25);
+  cursor: pointer; padding: 0; transition: transform .12s ease, border-color .12s ease;
+}
+.note-color-swatch:hover { transform: scale(1.15); border-color: #fff; }
+.note-menu-delete {
+  margin-left: 4px; background: transparent; border: none; color: var(--sema-red);
+  font-size: 12px; cursor: pointer; padding: 4px 6px; white-space: nowrap;
+}

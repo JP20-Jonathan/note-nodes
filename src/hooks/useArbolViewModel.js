@@ -56,6 +56,10 @@ export function useArbolViewModel(items, projects, currentMonthKey, currentWeekS
     const activeItems = items.filter((i) => !i.done);
 
     const SUN_ID = "sun";
+    // weekCount alimenta el color/titileo del sol en ForceGraph: cuántos
+    // pendientes de "esta semana" hay activos ahora mismo — es la señal de
+    // "¿preparé mi semana o no?", independiente del total general (activeCount).
+    const weekCount = activeItems.filter((i) => i.tipificado === "esta_semana").length;
     nodes.push({
       id: SUN_ID,
       type: "sun",
@@ -64,7 +68,7 @@ export function useArbolViewModel(items, projects, currentMonthKey, currentWeekS
       color: "#F5D67B",
       emoji: "☀️",
       radius: 42,
-      meta: { activeCount: activeItems.length },
+      meta: { activeCount: activeItems.length, weekCount },
     });
 
     CATEGORIES.forEach((cat) => {
