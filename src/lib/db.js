@@ -1,8 +1,11 @@
-// Capa de acceso a datos sobre Supabase (tablas items/projects/notes,
-// una fila por registro, con RLS por user_id). Traduce entre las columnas
-// de la base (snake_case, project_id/anchor_month/sort_order) y la forma
-// que ya espera el resto de la app (camelCase, projects agrupados por
-// categoría) para no tener que tocar businessRules.js/useArbolViewModel.
+// Capa de acceso a datos sobre Supabase (tablas actividades/categorias/
+// notes en la base — "items"/"projects" en el nombre de tabla original,
+// renombradas 2026-09-23 — una fila por registro, con RLS por user_id).
+// Traduce entre las columnas de la base (snake_case, project_id/
+// anchor_month/sort_order) y la forma que ya espera el resto de la app
+// (camelCase, projects agrupados por categoría) para no tener que tocar
+// businessRules.js/useArbolViewModel — el runtime JS sigue hablando de
+// "items"/"projects", solo cambió el nombre de la tabla en Postgres.
 import { supabase } from "./supabaseClient.js";
 
 function rowToItem(row) {
@@ -28,13 +31,13 @@ function rowToProject(row) {
 }
 
 function rowToNote(row) {
-  return { id: row.id, text: row.text, x: row.x, y: row.y, seed: row.seed };
+  return { id: row.id, text: row.text, x: row.x, y: row.y, seed: row.seed, color: row.color || null, collapsed: !!row.collapsed };
 }
 
 export async function fetchAllData(userId) {
   const [itemsRes, projectsRes, notesRes] = await Promise.all([
-    supabase.from("items").select("*").eq("user_id", userId).order("sort_order", { ascending: true }),
-    supabase.from("projects").select("*").eq("user_id", userId),
+    supabase.from("actividades").select("*").eq("user_id", userId).order("sort_order", { ascending: true }),
+    supabase.from("categorias").select("*").eq("user_id", userId),
     supabase.from("notes").select("*").eq("user_id", userId),
   ]);
   if (itemsRes.error) throw itemsRes.error;
@@ -55,7 +58,7 @@ export async function fetchAllData(userId) {
 
 export async function insertItem(userId, data) {
   const { data: row, error } = await supabase
-    .from("items")
+    .from("actividades")
     .insert({
       user_id: userId,
       name: data.name,
@@ -87,12 +90,12 @@ export async function updateItem(id, patch) {
   if ("order" in patch) row.sort_order = patch.order;
   if ("done" in patch) row.done = patch.done;
   if ("notes" in patch) row.notes = patch.notes || null;
-  const { error } = await supabase.from("items").update(row).eq("id", id);
+  const { error } = await supabase.from("actividades").update(row).eq("id", id);
   if (error) throw error;
 }
 
 export async function deleteItem(id) {
-  const { error } = await supabase.from("items").delete().eq("id", id);
+  const { error } = await supabase.from("actividades").delete().eq("id", id);
   if (error) throw error;
 }
 
@@ -102,7 +105,7 @@ export async function updateItemsOrder(updates) {
 
 export async function insertProject(userId, categoryId, name) {
   const { data: row, error } = await supabase
-    .from("projects")
+    .from("categorias")
     .insert({ user_id: userId, category: categoryId, name })
     .select()
     .single();
@@ -111,7 +114,7 @@ export async function insertProject(userId, categoryId, name) {
 }
 
 export async function deleteProject(id) {
-  const { error } = await supabase.from("projects").delete().eq("id", id);
+  const { error } = await supabase.from("categorias").delete().eq("id", id);
   if (error) throw error;
 }
 
@@ -130,6 +133,21 @@ export async function updateNoteText(id, text) {
   if (error) throw error;
 }
 
+export async function updateNotePosition(id, x, y) {
+  const { error } = await supabase.from("notes").update({ x: Math.round(x), y: Math.round(y) }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function updateNoteColor(id, color) {
+  const { error } = await supabase.from("notes").update({ color }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function updateNoteCollapsed(id, collapsed) {
+  const { error } = await supabase.from("notes").update({ collapsed }).eq("id", id);
+  if (error) throw error;
+}
+
 export async function deleteNote(id) {
   const { error } = await supabase.from("notes").delete().eq("id", id);
   if (error) throw error;
@@ -143,7 +161,7 @@ export async function bulkInsertTestData(userId, { items, seedProjects, notes })
     for (const project of list) {
       const row = await insertProject(userId, categoryId, project.name);
       projectIdByPlaceholder[project.id] = row.id;
-      await supabase.from("projects").update({ seed: true }).eq("id", row.id);
+      await supabase.from("categorias").update({ seed: true }).eq("id", row.id);
     }
   }
 
@@ -160,7 +178,7 @@ export async function bulkInsertTestData(userId, { items, seedProjects, notes })
       sort_order: item.order || 0,
       seed: true,
     }));
-    const { error } = await supabase.from("items").insert(rows);
+    const { error } = await supabase.from("actividades").insert(rows);
     if (error) throw error;
   }
 
@@ -172,8 +190,8 @@ export async function bulkInsertTestData(userId, { items, seedProjects, notes })
 }
 
 export async function deleteSeedData(userId) {
-  await supabase.from("items").delete().eq("user_id", userId).eq("seed", true);
-  await supabase.from("projects").delete().eq("user_id", userId).eq("seed", true);
+  await supabase.from("actividades").delete().eq("user_id", userId).eq("seed", true);
+  await supabase.from("categorias").delete().eq("user_id", userId).eq("seed", true);
   await supabase.from("notes").delete().eq("user_id", userId).eq("seed", true);
 }
 
@@ -181,8 +199,8 @@ export async function deleteSeedData(userId) {
 // respaldo .json — se generan ids nuevos porque los del archivo no son
 // UUIDs válidos para las columnas de Postgres.
 export async function replaceAllData(userId, { items, projects, notes }) {
-  await supabase.from("items").delete().eq("user_id", userId);
-  await supabase.from("projects").delete().eq("user_id", userId);
+  await supabase.from("actividades").delete().eq("user_id", userId);
+  await supabase.from("categorias").delete().eq("user_id", userId);
   await supabase.from("notes").delete().eq("user_id", userId);
 
   const projectIdByOldId = {};
@@ -206,7 +224,7 @@ export async function replaceAllData(userId, { items, projects, notes }) {
       sort_order: item.order || 0,
       done: !!item.done,
     }));
-    const { error } = await supabase.from("items").insert(rows);
+    const { error } = await supabase.from("actividades").insert(rows);
     if (error) throw error;
   }
 

@@ -10,7 +10,7 @@ import { buildTestData } from "./data/seedData.js";
 import { useArbolViewModel } from "./hooks/useArbolViewModel.js";
 import { useDragGhost } from "./hooks/useDragGhost.js";
 import { ForceGraph } from "./components/tree/ForceGraph.jsx";
-import { FloatingNote } from "./components/tree/FloatingNote.jsx";
+import { FloatingNote, CollapsedNoteChip } from "./components/tree/FloatingNote.jsx";
 import { ItemDetailPopover } from "./components/modals/ItemDetailPopover.jsx";
 import { ItemFormModal } from "./components/modals/ItemFormModal.jsx";
 import { DeleteTestDataModal } from "./components/modals/DeleteTestDataModal.jsx";
@@ -50,6 +50,7 @@ function PendientesApp({ userId, userEmail }) {
   const [formState, setFormState] = useState(null);
   const fileInputRef = useRef(null);
   const canvasRef = useRef(null);
+  const treeAreaRef = useRef(null);
 
   const { year, month, day } = useMemo(() => todayInMedellin(), []);
   const currentMonthKey = useMemo(() => monthKey(year, month), [year, month]);
@@ -246,7 +247,9 @@ function PendientesApp({ userId, userEmail }) {
   async function handleCanvasClick(e) {
     const tag = e.target.tagName ? e.target.tagName.toLowerCase() : "";
     if (tag === "circle" || tag === "text" || e.target.closest(".floating-note, button, input, textarea, select")) return;
-    const rect = canvasRef.current.getBoundingClientRect();
+    // Las notas se posicionan relativas a treeAreaRef (todo el tab, no solo
+    // el lienzo) — ver el comentario junto a su render más abajo.
+    const rect = treeAreaRef.current.getBoundingClientRect();
     const rawX = e.clientX - rect.left;
     const rawY = e.clientY - rect.top;
 
@@ -282,6 +285,27 @@ function PendientesApp({ userId, userEmail }) {
   }
   function startEditNote(id) { setEditingNoteId(id); }
 
+  // Arrastrar una nota reposiciona su ancla libremente por el lienzo — así
+  // el usuario puede sacarlas de en medio del árbol en vez de que floten
+  // fijas estorbando la vista, sobre todo en pantalla completa.
+  async function moveNote(id, x, y) {
+    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
+    try { await db.updateNotePosition(id, x, y); setSaveError(false); } catch (e) { setSaveError(true); }
+  }
+  // Doble clic colapsa/expande (acordeón): una nota que estorba se encoge a
+  // una burbuja chica sin perder su texto ni su posición.
+  async function toggleNoteCollapsed(id) {
+    const note = notes.find((n) => n.id === id);
+    if (!note) return;
+    const collapsed = !note.collapsed;
+    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, collapsed } : n)));
+    try { await db.updateNoteCollapsed(id, collapsed); setSaveError(false); } catch (e) { setSaveError(true); }
+  }
+  async function changeNoteColor(id, color) {
+    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, color } : n)));
+    try { await db.updateNoteColor(id, color); setSaveError(false); } catch (e) { setSaveError(true); }
+  }
+
   const createProject = useCallback(async (categoryId, name) => {
     const row = await db.insertProject(userId, categoryId, name);
     setProjects((prev) => ({ ...prev, [categoryId]: [...(prev[categoryId] || []), row] }));
@@ -291,6 +315,14 @@ function PendientesApp({ userId, userEmail }) {
   const hasSeedData = items.some((i) => i.seed) || notes.some((n) => n.seed) || Object.values(projects).some((list) => list.some((p) => p.seed));
 
   async function insertTestData() {
+    // Un solo clic accidental aquí reemplaza los 50 datos de prueba — igual
+    // de irreversible en la práctica que "Eliminar", así que también pide
+    // confirmación (más liviana que ese modal porque esto no toca nada que
+    // el usuario haya creado a mano, solo lo re-siembra).
+    const confirmMsg = hasSeedData
+      ? "Esto reemplaza los datos de prueba actuales por un set nuevo de 50. No toca lo que hayas agregado tú. ¿Continuar?"
+      : "Esto agrega 50 pendientes/proyectos/notas de prueba. ¿Continuar?";
+    if (!window.confirm(confirmMsg)) return;
     const seed = buildTestData({ currentMonthKey, nextMonthKey, currentWeekStart, nextWeekStart });
     try {
       if (hasSeedData) await db.deleteSeedData(userId);
@@ -334,15 +366,30 @@ function PendientesApp({ userId, userEmail }) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async () => {
+      // Separado en dos try/catch a propósito: un JSON mal formado y un
+      // fallo de red/base de datos son errores muy distintos — antes se
+      // mostraba el mismo mensaje genérico para ambos, lo que hacía parecer
+      // "roto" el botón cuando en realidad, por ejemplo, la base de datos
+      // no tenía corrida la migración de nombres de tabla.
+      let parsed;
       try {
-        const parsed = JSON.parse(reader.result);
-        if (!window.confirm("Esto reemplaza tus pendientes actuales por los del archivo de respaldo. ¿Continuar?")) return;
+        parsed = JSON.parse(reader.result);
+      } catch (err) {
+        window.alert("Ese archivo no es un JSON válido — no parece un respaldo de Note Nodes.");
+        return;
+      }
+      if (!window.confirm("Esto reemplaza tus pendientes actuales por los del archivo de respaldo. ¿Continuar?")) return;
+      try {
         await db.replaceAllData(userId, parsed);
         const fresh = await db.fetchAllData(userId);
         setItems(fresh.items);
         setProjects(fresh.projects);
         setNotes(fresh.notes);
-      } catch (err) { window.alert("Ese archivo no parece un respaldo válido, o no se pudo restaurar."); }
+        setSaveError(false);
+      } catch (err) {
+        console.error("Error restaurando el respaldo:", err);
+        window.alert(`No se pudo restaurar el respaldo: ${err.message || "revisa tu conexión."}`);
+      }
     };
     reader.readAsText(file);
     e.target.value = "";
@@ -389,13 +436,7 @@ function PendientesApp({ userId, userEmail }) {
 
       <main className="pnd-main">
         {tab === "tree" && (
-          <div className={treeExpanded ? "tree-expanded" : ""}>
-            <p className="canvas-hint">
-              Doble clic en un espacio vacío del lienzo para dejar una nota rápida ahí mismo. Clic en un
-              pendiente para ver su detalle. Clic en una categoría o proyecto para enfocar su rama; doble clic para
-              agregar un pendiente ahí mismo. Clic en el sol para quitar el foco. Arrastra el lienzo (o desliza con dos
-              dedos) para moverte, y usa Ctrl + rueda (o pellizco) para acercar/alejar.
-            </p>
+          <div className={`tree-tab-area ${treeExpanded ? "tree-expanded" : ""}`} ref={treeAreaRef}>
             <div className="cosmos-stage tree-canvas" ref={canvasRef} onClick={handleCanvasClick}>
               <button
                 type="button"
@@ -420,12 +461,30 @@ function PendientesApp({ userId, userEmail }) {
                   }
                 }}
               />
-
-              {notes.map((note) => (
-                <FloatingNote key={note.id} note={note} editing={editingNoteId === note.id}
-                  onStartEdit={startEditNote} onCommit={(text) => commitNoteText(note.id, text)} onDelete={deleteNote} />
-              ))}
             </div>
+
+            {/* Las notas expandidas viven por fuera del lienzo (aunque su x/y
+                se siga midiendo desde este mismo wrapper) para que se puedan
+                arrastrar libremente por toda esta área, sin quedar recortadas
+                por el overflow:hidden del lienzo. */}
+            {notes.filter((n) => !n.collapsed).map((note) => (
+              <FloatingNote key={note.id} note={note} editing={editingNoteId === note.id}
+                onStartEdit={startEditNote} onCommit={(text) => commitNoteText(note.id, text)} onDelete={deleteNote}
+                onMove={moveNote} onToggleCollapse={toggleNoteCollapsed} onColorChange={changeNoteColor} />
+            ))}
+
+            {/* Las colapsadas ya no usan su x/y libre — se apilan en un riel
+                fijo al lado derecho, cada una con su primera línea de texto
+                como título, para no perderlas de vista ni que terminen fuera
+                de la pantalla. */}
+            {notes.some((n) => n.collapsed) && (
+              <div className="notes-rail">
+                {notes.filter((n) => n.collapsed).map((note) => (
+                  <CollapsedNoteChip key={note.id} note={note}
+                    onExpand={toggleNoteCollapsed} onDelete={deleteNote} onColorChange={changeNoteColor} />
+                ))}
+              </div>
+            )}
           </div>
         )}
         {tab === "tablero" && (
