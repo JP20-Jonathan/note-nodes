@@ -1,21 +1,21 @@
 import { useState } from "react";
 import { CATEGORIES, getCategory } from "../../data/categories.js";
 import { getTipificado, TIPIFICADO_ICON } from "../../data/tipificados.js";
-import { deadlineChipClass, projectNameFor } from "../../data/businessRules.js";
+import { deadlineChipClass, deadlineVerb, projectNameFor } from "../../data/businessRules.js";
 import { shortDateStr } from "../../data/dateUtils.js";
-import { COLUMN_DRAG_TYPE, sizeLabel, useColumnLayout } from "../../hooks/useColumnLayout.js";
+import { COLUMN_DRAG_TYPE, useColumnLayout } from "../../hooks/useColumnLayout.js";
 
 const CATEGORY_IDS = CATEGORIES.map((c) => c.id);
 
 // Tinte muy sutil para los 3 tipificados de "ya agendado esta semana o la
 // próxima" — no desaparecen de su categoría, solo se ven más transparentes
 // y se listan al final, para distinguir de un vistazo "esto ya lo
-// programé" de "esto sigue en backlog". siguientes_actividades queda a
-// propósito entre el verde y el amarillo, con una diferencia mínima frente
-// a los otros dos.
+// programé" de "esto sigue en backlog". en_curso usa el mismo tinte verde
+// que esta_semana (no uno intermedio) — están en la misma categoría de
+// "activo ahora", en_curso si acaso un poco más (ver ForceGraph.jsx).
 const WEEK_TINT = {
   esta_semana: "rgba(76, 175, 125, 0.14)",
-  siguientes_actividades: "rgba(139, 184, 107, 0.14)",
+  en_curso: "rgba(76, 175, 125, 0.14)",
   proxima_semana: "rgba(234, 197, 79, 0.14)",
 };
 
@@ -47,7 +47,7 @@ function ItemRow({ item, projects, todayStr, onOpenDetail, dragGhost }) {
         <div className="tab-row-meta">
           <span className="badge chip">{TIPIFICADO_ICON[tip.id]} {tip.label}</span>
           {proj && <span className="badge chip">{proj}</span>}
-          {item.deadline && <span className={deadlineChipClass(item.deadline, todayStr)}>vence {shortDateStr(item.deadline)}</span>}
+          {item.deadline && <span className={deadlineChipClass(item.deadline, todayStr)}>{deadlineVerb(item.deadline, todayStr)} {shortDateStr(item.deadline)}</span>}
         </div>
       </div>
       <span className="drag-handle" aria-hidden="true">⠿</span>
@@ -98,12 +98,12 @@ function ScheduleDropBox({ className, label, tipificado, items, onSchedule, drag
 // scroll — mismo patrón que TableroColumn, para que las dos vistas del
 // Tablero se comporten igual de "compactas por defecto". El "+" crea un
 // pendiente directo en esa categoría (abre el mismo formulario de siempre,
-// con la categoría ya preseleccionada).
-function CategoriaColumn({ cat, items, projects, todayStr, onCreate, size, onMoveColumn, onCycleSize, onOpenDetail, dragGhost }) {
-  const [expanded, setExpanded] = useState(false);
+// con la categoría ya preseleccionada). expanded/onToggleExpand vienen de
+// useColumnLayout para que se recuerden por navegador.
+function CategoriaColumn({ cat, items, projects, todayStr, onCreate, expanded, onToggleExpand, onMoveColumn, onOpenDetail, dragGhost }) {
   const [colDragOver, setColDragOver] = useState(false);
   return (
-    <div className={`tab-col size-${size}`} style={{ borderColor: cat.color }}>
+    <div className={`tab-col ${expanded ? "expanded-col" : ""}`} style={{ borderColor: cat.color }}>
       <div
         className={`tab-col-head ${colDragOver ? "drag-over" : ""}`}
         onDragOver={(e) => { if (e.dataTransfer.types.includes(COLUMN_DRAG_TYPE)) { e.preventDefault(); setColDragOver(true); } }}
@@ -126,8 +126,7 @@ function CategoriaColumn({ cat, items, projects, todayStr, onCreate, size, onMov
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <button type="button" className="tab-col-add-btn" title={`Nuevo pendiente en ${cat.label}`} onClick={() => onCreate(cat.id)}>+</button>
           <span>{items.length}</span>
-          <button type="button" className="tab-col-size-btn" title="Cambiar tamaño" onClick={onCycleSize}>{sizeLabel(size)}</button>
-          <button type="button" className="tab-col-expand-btn" title={expanded ? "Contraer" : "Expandir"} onClick={() => setExpanded((v) => !v)}>
+          <button type="button" className="tab-col-expand-btn" title={expanded ? "Contraer" : "Expandir"} onClick={onToggleExpand}>
             {expanded ? "⤡" : "⤢"}
           </button>
         </div>
@@ -166,7 +165,7 @@ export function CategoriaBoardView({ items, projects, todayStr, onSchedule, onCr
             <CategoriaColumn
               key={cat.id} cat={cat} projects={projects} todayStr={todayStr} onCreate={onCreate}
               items={sortForCategoria(items.filter((i) => !i.done && i.category === cat.id))}
-              size={layout.sizeOf(cat.id)} onMoveColumn={layout.moveColumn} onCycleSize={() => layout.cycleSize(cat.id)}
+              expanded={layout.isExpanded(cat.id)} onMoveColumn={layout.moveColumn} onToggleExpand={() => layout.toggleExpanded(cat.id)}
               onOpenDetail={onOpenDetail} dragGhost={dragGhost}
             />
           );

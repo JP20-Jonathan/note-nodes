@@ -5,18 +5,17 @@ import { monthLabel, shortDateStr } from "../../data/dateUtils.js";
 import { useColumnLayout } from "../../hooks/useColumnLayout.js";
 import { TableroColumn } from "./TableroColumn.jsx";
 
-const SEMANA_IDS = ["esta_semana", "siguientes_actividades", "proxima_semana"];
+const SEMANA_IDS = ["esta_semana", "en_curso", "proxima_semana"];
 const MES_IDS = ["este_mes", "proximo_mes"];
 const SIN_FECHA_IDS = ["sin_tipificar", "urgentes", "importantisimas"];
 
-export function TableroView({ items, projects, currentMonthKey, currentWeekStart, onDropItem, onRenew, onEditOverdue, onOpenDetail, dragGhost }) {
-  const todayStr = `${currentMonthKey}-01`;
+export function TableroView({ items, projects, currentMonthKey, currentWeekStart, todayStr, onDropItem, onRenew, onEditOverdue, onOpenDetail, dragGhost }) {
   const overdue = items.filter((i) => !i.done && isOverdue(i, currentMonthKey, currentWeekStart));
 
-  // Un grupo por fila (Semana/Mes/Sin fecha fija) — reordenar y redimensionar
-  // se hace DENTRO de cada grupo, nunca cruzando de uno a otro, porque esas
-  // filas agrupan tipificados por su scope (semana/mes/ninguno) y mezclarlas
-  // no tendría sentido semántico.
+  // Un grupo por fila (Semana/Mes/Sin fecha fija) — reordenar se hace
+  // DENTRO de cada grupo, nunca cruzando de uno a otro, porque esas filas
+  // agrupan tipificados por su scope (semana/mes/ninguno) y mezclarlas no
+  // tendría sentido semántico.
   const semana = useColumnLayout("semana", SEMANA_IDS);
   const mes = useColumnLayout("mes", MES_IDS);
   const sinFecha = useColumnLayout("sinfecha", SIN_FECHA_IDS);
@@ -78,7 +77,7 @@ export function TableroView({ items, projects, currentMonthKey, currentWeekStart
         {semana.order.map((tipId) => (
           <TableroColumn
             key={tipId} tip={getTipificado(tipId)} list={bucket(tipId)} onDropItem={onDropItem} todayStr={todayStr} projects={projects} onOpenDetail={onOpenDetail} dragGhost={dragGhost}
-            size={semana.sizeOf(tipId)} onMoveColumn={semana.moveColumn} onCycleSize={() => semana.cycleSize(tipId)}
+            expanded={semana.isExpanded(tipId)} onMoveColumn={semana.moveColumn} onToggleExpand={() => semana.toggleExpanded(tipId)}
           />
         ))}
       </div>
@@ -88,7 +87,7 @@ export function TableroView({ items, projects, currentMonthKey, currentWeekStart
         {mes.order.map((tipId) => (
           <TableroColumn
             key={tipId} tip={getTipificado(tipId)} list={bucket(tipId)} onDropItem={onDropItem} todayStr={todayStr} projects={projects} onOpenDetail={onOpenDetail} dragGhost={dragGhost}
-            size={mes.sizeOf(tipId)} onMoveColumn={mes.moveColumn} onCycleSize={() => mes.cycleSize(tipId)}
+            expanded={mes.isExpanded(tipId)} onMoveColumn={mes.moveColumn} onToggleExpand={() => mes.toggleExpanded(tipId)}
           />
         ))}
       </div>
@@ -98,7 +97,7 @@ export function TableroView({ items, projects, currentMonthKey, currentWeekStart
         {sinFecha.order.map((tipId) => (
           <TableroColumn
             key={tipId} tip={getTipificado(tipId)} list={bucket(tipId)} onDropItem={onDropItem} todayStr={todayStr} projects={projects} onOpenDetail={onOpenDetail} dragGhost={dragGhost}
-            size={sinFecha.sizeOf(tipId)} onMoveColumn={sinFecha.moveColumn} onCycleSize={() => sinFecha.cycleSize(tipId)}
+            expanded={sinFecha.isExpanded(tipId)} onMoveColumn={sinFecha.moveColumn} onToggleExpand={() => sinFecha.toggleExpanded(tipId)}
           />
         ))}
       </div>

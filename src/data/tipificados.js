@@ -2,7 +2,7 @@
 // agregar a mano si se quiere, pero no la exige el formulario).
 export const TIPIFICADOS = [
   { id: "esta_semana", label: "Esta semana", scope: "week", cap: 5 },
-  { id: "siguientes_actividades", label: "Siguientes actividades", scope: "week", cap: 8 },
+  { id: "en_curso", label: "En curso", scope: "week", cap: 8 },
   { id: "proxima_semana", label: "Próxima semana", scope: "week", cap: null },
   { id: "este_mes", label: "Este mes", scope: "month", cap: 20 },
   { id: "proximo_mes", label: "Próximo mes", scope: "month", cap: 20 },
@@ -16,7 +16,7 @@ export function getTipificado(id) {
 }
 
 export const TIPIFICADO_ICON = {
-  esta_semana: "🌕", siguientes_actividades: "🌖", proxima_semana: "🌗",
+  esta_semana: "🌕", en_curso: "🌖", proxima_semana: "🌗",
   este_mes: "🪐", proximo_mes: "🌌",
   sin_tipificar: "☄️", urgentes: "🔥", importantisimas: "⭐",
 };
