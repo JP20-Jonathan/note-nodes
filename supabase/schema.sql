@@ -200,3 +200,11 @@ begin
     create policy "subpendientes_delete_own" on public.subpendientes for delete using (auth.uid() = user_id);
   end if;
 end $$;
+
+-- Migración 2026-10-11c: tamaño propio por nota flotante — se puede
+-- redimensionar arrastrando su esquina inferior-derecha (ver
+-- FloatingNote.jsx). Null en cualquiera de las dos = sigue usando el
+-- tamaño por defecto (ancho fijo, alto que crece solo con el texto), igual
+-- que antes de esta migración — no afecta ninguna nota existente.
+alter table public.notes add column if not exists width integer;
+alter table public.notes add column if not exists height integer;

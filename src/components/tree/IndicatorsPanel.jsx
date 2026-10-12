@@ -21,7 +21,7 @@ function loadPos() {
 const INDICATOR_IDS = ["proxima_semana", "este_mes", "proximo_mes"];
 const FILTER_IDS = ["esta_semana", "proxima_semana", "este_mes", "proximo_mes"];
 
-export function IndicatorsPanel({ items, projects, notes, tipificadoFilter, onToggleFilter, defaultPos }) {
+export function IndicatorsPanel({ items, projects, notes, tipificadoFilter, onToggleFilter, defaultPos, canvasBounds, hideWhenOutside }) {
   const userMovedRef = useRef(loadPos() !== null);
   const { pos, setPos, handleMouseDown } = useDraggablePosition(
     loadPos() || defaultPos || { x: 10, y: 10 },
@@ -31,6 +31,16 @@ export function IndicatorsPanel({ items, projects, notes, tipificadoFilter, onTo
   // (resize, pantalla completa) — en cuanto lo arrastra una vez, deja de
   // seguir el default para siempre (ver userMovedRef).
   useEffect(() => { if (!userMovedRef.current && defaultPos) setPos(defaultPos); }, [defaultPos, setPos]);
+
+  // Si lo arrastraron fuera del lienzo (al fondo sin usar) y estamos en
+  // pantalla completa, ese fondo ya no existe — el lienzo pasa a ocupar
+  // toda la ventana — así que en vez de aparecer encimado en medio del
+  // grafo, se oculta: "fuera" sigue significando fuera de la vista. Solo
+  // aplica si lo arrastró a mano (userMovedRef) — la posición por defecto
+  // sigue la esquina del lienzo incluso expandido, así que nunca cuenta
+  // como "afuera" aunque quede más allá del tamaño congelado.
+  const isOutsideCanvas = userMovedRef.current && canvasBounds && (pos.x >= canvasBounds.width || pos.y >= canvasBounds.height);
+  if (hideWhenOutside && isOutsideCanvas) return null;
 
   const activeItems = items.filter((i) => !i.done);
   const countFor = (tipId) => activeItems.filter((i) => i.tipificado === tipId).length;
