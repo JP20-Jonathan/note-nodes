@@ -2,18 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./lib/supabaseClient.js";
 import * as db from "./lib/db.js";
 import { AuthScreen } from "./components/auth/AuthScreen.jsx";
-import { monthKey, addMonthKey, mondayOf, addDaysToDateStr, todayInMedellin } from "./data/dateUtils.js";
+import { monthKey, addMonthKey, mondayOf, addDaysToDateStr, todayInMedellin, pad2 } from "./data/dateUtils.js";
 import { anchorFor, countActiveForCap } from "./data/businessRules.js";
 import { getTipificado } from "./data/tipificados.js";
-import { DEFAULT_CESDE_AREAS } from "./data/categories.js";
-import { buildTestData } from "./data/seedData.js";
+import { DEFAULT_CESDE_AREAS, CATEGORIES } from "./data/categories.js";
+import { loadColorOverrides, saveColorOverrides } from "./data/colorOverrides.js";
 import { useArbolViewModel } from "./hooks/useArbolViewModel.js";
 import { useDragGhost } from "./hooks/useDragGhost.js";
 import { ForceGraph } from "./components/tree/ForceGraph.jsx";
+import { IndicatorsPanel } from "./components/tree/IndicatorsPanel.jsx";
+import { ColorLegend } from "./components/tree/ColorLegend.jsx";
+import { ContextMenu } from "./components/ContextMenu.jsx";
+import { ClipboardComposer } from "./components/tree/ClipboardComposer.jsx";
+import { draftNodeKey, listDrafts } from "./data/itemDrafts.js";
 import { FloatingNote, CollapsedNoteChip } from "./components/tree/FloatingNote.jsx";
 import { ItemDetailPopover } from "./components/modals/ItemDetailPopover.jsx";
 import { ItemFormModal } from "./components/modals/ItemFormModal.jsx";
-import { DeleteTestDataModal } from "./components/modals/DeleteTestDataModal.jsx";
+import { CompletedItemsModal } from "./components/modals/CompletedItemsModal.jsx";
+import { ColorControllerModal } from "./components/modals/ColorControllerModal.jsx";
 import { TableroView } from "./components/tablero/TableroView.jsx";
 import { CategoriaBoardView } from "./components/tablero/CategoriaBoardView.jsx";
 
@@ -37,6 +43,10 @@ function PendientesApp({ userId, userEmail }) {
   const [items, setItems] = useState([]);
   const [projects, setProjects] = useState({});
   const [notes, setNotes] = useState([]);
+  // Subpendientes agrupados por id de pendiente padre (mismo patrón que
+  // `projects`, agrupado por categoría) para que ItemDetailPopover los
+  // busque en O(1) en vez de filtrar un array plano en cada render.
+  const [subPendientes, setSubPendientes] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -45,19 +55,81 @@ function PendientesApp({ userId, userEmail }) {
   const [completeDragOver, setCompleteDragOver] = useState(false);
   const [treeExpanded, setTreeExpanded] = useState(false);
   const [detailItem, setDetailItem] = useState(null);
+  // De dónde se abrió el popover de detalle — "grafo" exige un segundo clic
+  // para marcar hecho (ver ItemDetailPopover), el Tablero no.
+  const [detailSource, setDetailSource] = useState(null);
+  const openDetailFromTablero = useCallback((item) => { setDetailItem(item); setDetailSource("tablero"); }, []);
+  // Filtro de tipificado del panel de indicadores — a propósito NO se
+  // persiste (ver IndicatorsPanel.jsx): es una exploración puntual de la
+  // sesión, no algo que tenga sentido recordar entre recargas.
+  const [tipificadoFilter, setTipificadoFilter] = useState(() => new Set());
+  const toggleTipificadoFilter = useCallback((tipId) => {
+    setTipificadoFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(tipId)) next.delete(tipId);
+      else next.add(tipId);
+      return next;
+    });
+  }, []);
   const [editingNoteId, setEditingNoteId] = useState(null);
-  const [showDeleteTestModal, setShowDeleteTestModal] = useState(false);
+  const [showCompletedModal, setShowCompletedModal] = useState(false);
+  const [showColorController, setShowColorController] = useState(false);
+  const [colorOverrides, setColorOverrides] = useState(() => loadColorOverrides());
+  const handleColorOverrideChange = useCallback((key, hex) => {
+    setColorOverrides((prev) => {
+      const next = { ...prev, [key]: hex };
+      saveColorOverrides(next);
+      return next;
+    });
+  }, []);
+  const handleColorOverrideReset = useCallback((key) => {
+    setColorOverrides((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      saveColorOverrides(next);
+      return next;
+    });
+  }, []);
   const [formState, setFormState] = useState(null);
   const fileInputRef = useRef(null);
   const canvasRef = useRef(null);
   const treeAreaRef = useRef(null);
+  // Posición inicial de IndicatorsPanel/ColorLegend: se miden en vivo contra
+  // el lienzo del Árbol (esquina superior izquierda / inferior derecha, "como
+  // están" hoy) para que arranquen ahí mismo aunque ahora vivan por fuera del
+  // lienzo (necesario para poder arrastrarlos también al fondo sin usar). Si
+  // el usuario ya los arrastró antes, cada componente ignora este default
+  // (ver useDraggablePosition + localStorage dentro de cada uno).
+  const [indicatorsDefaultPos, setIndicatorsDefaultPos] = useState(null);
+  const [legendDefaultPos, setLegendDefaultPos] = useState(null);
+  useEffect(() => {
+    const canvasEl = canvasRef.current;
+    const areaEl = treeAreaRef.current;
+    if (!canvasEl || !areaEl || typeof ResizeObserver === "undefined") return;
+    function recompute() {
+      const canvasRect = canvasEl.getBoundingClientRect();
+      const areaRect = areaEl.getBoundingClientRect();
+      setIndicatorsDefaultPos({ x: canvasRect.left - areaRect.left + 10, y: canvasRect.top - areaRect.top + 10 });
+      setLegendDefaultPos({ x: canvasRect.right - areaRect.left - 230, y: canvasRect.bottom - areaRect.top - 120 });
+    }
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(canvasEl);
+    return () => ro.disconnect();
+  }, [tab, loaded]);
 
   const { year, month, day } = useMemo(() => todayInMedellin(), []);
   const currentMonthKey = useMemo(() => monthKey(year, month), [year, month]);
   const nextMonthKey = useMemo(() => addMonthKey(currentMonthKey, 1), [currentMonthKey]);
   const currentWeekStart = useMemo(() => mondayOf(year, month, day), [year, month, day]);
   const nextWeekStart = useMemo(() => addDaysToDateStr(currentWeekStart, 7), [currentWeekStart]);
-  const arbolViewModel = useArbolViewModel(items, projects, currentMonthKey, currentWeekStart);
+  // Fecha real de HOY (no "el 1 del mes actual", que es lo que varios
+  // componentes usaban a modo de aproximación — bug real: "vence"/"venció"
+  // y el color de urgencia de los chips de deadline solo funcionaban bien
+  // los primeros días del mes). Se calcula una sola vez acá y se pasa hacia
+  // abajo a todo lo que compare contra "hoy".
+  const todayStr = useMemo(() => `${year}-${pad2(month)}-${pad2(day)}`, [year, month, day]);
+  const arbolViewModel = useArbolViewModel(items, projects, currentMonthKey, currentWeekStart, nextWeekStart, colorOverrides, subPendientes);
   const dragGhost = useDragGhost();
 
   // Fondo de partículas (constelación) — se inicializa una sola vez, fuera
@@ -112,6 +184,7 @@ function PendientesApp({ userId, userEmail }) {
         setItems(data.items);
         setProjects(data.projects);
         setNotes(data.notes);
+        setSubPendientes(data.subPendientes);
         setLoaded(true);
       } catch (e) {
         if (!cancelled) { setLoadError(true); setLoaded(true); }
@@ -139,15 +212,60 @@ function PendientesApp({ userId, userEmail }) {
 
   const deleteItemById = useCallback(async (id) => {
     setItems((prev) => prev.filter((i) => i.id !== id));
+    // Sus subpendientes se borran en cascada en la base (FK on delete
+    // cascade) — acá solo se limpia el estado local para que no queden
+    // huérfanos a la vista hasta la próxima recarga.
+    setSubPendientes((prev) => {
+      if (!prev[id]) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     try { await db.deleteItem(id); setSaveError(false); } catch (e) { setSaveError(true); }
+  }, []);
+
+  const addSubPendiente = useCallback(async (pendienteId, data) => {
+    try {
+      const row = await db.insertSubPendiente(userId, pendienteId, data);
+      setSubPendientes((prev) => ({ ...prev, [pendienteId]: [...(prev[pendienteId] || []), row] }));
+      setSaveError(false);
+    } catch (e) {
+      setSaveError(true);
+    }
+  }, [userId]);
+
+  const deleteSubPendiente = useCallback(async (id, pendienteId) => {
+    setSubPendientes((prev) => (
+      prev[pendienteId] ? { ...prev, [pendienteId]: prev[pendienteId].filter((s) => s.id !== id) } : prev
+    ));
+    try { await db.deleteSubPendiente(id); setSaveError(false); } catch (e) { setSaveError(true); }
+  }, []);
+
+  const editSubPendiente = useCallback(async (id, pendienteId, data) => {
+    setSubPendientes((prev) => (
+      prev[pendienteId]
+        ? { ...prev, [pendienteId]: prev[pendienteId].map((s) => (s.id === id ? { ...s, ...data } : s)) }
+        : prev
+    ));
+    try { await db.updateSubPendiente(id, data); setSaveError(false); } catch (e) { setSaveError(true); }
   }, []);
 
   const toggleDone = useCallback(async (id) => {
     const item = items.find((i) => i.id === id);
     if (!item) return;
     const done = !item.done;
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, done } : i)));
-    try { await db.updateItem(id, { done }); setSaveError(false); } catch (e) { setSaveError(true); }
+    const doneAt = done ? Date.now() : null;
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, done, doneAt } : i)));
+    try {
+      await db.updateItem(id, { done, doneAt: done ? new Date(doneAt).toISOString() : null });
+      setSaveError(false);
+    } catch (e) {
+      // Si todavía no corriste la migración de done_at en Supabase, la
+      // columna no existe y este update falla — reintenta sin ella para que
+      // marcar hecho/pendiente nunca se rompa por eso (solo se pierde la
+      // fecha de completado hasta que corras la migración).
+      try { await db.updateItem(id, { done }); setSaveError(false); } catch (e2) { setSaveError(true); }
+    }
   }, [items]);
 
   // Reordenar por arrastre: mueve draggedId a la posición de targetId dentro
@@ -235,36 +353,46 @@ function PendientesApp({ userId, userEmail }) {
     await patchItem(id, anchors);
   }, [items, currentMonthKey, nextMonthKey, currentWeekStart, nextWeekStart, patchItem]);
 
-  // ---- Notas flotantes tipo Post-it — doble clic sobre el lienzo vacío
-  // las crea ahí mismo. Se detecta a mano (dos "click" seguidos, cerca en
-  // tiempo y en espacio) en vez de usar el evento "dblclick" del navegador,
-  // porque el "dblclick" nativo no llega de forma confiable aquí: d3.zoom
-  // tiene sus propios listeners de mousedown/mouseup en el mismo <svg> para
-  // el paneo, y esa combinación puede comerse el evento nativo. Un "click"
-  // corriente sí llega siempre, así que comparar dos clics entre sí es más
-  // confiable que depender de que el navegador arme el doble clic por su cuenta.
-  const lastCanvasClickRef = useRef({ time: 0, x: 0, y: 0 });
-  async function handleCanvasClick(e) {
+  // ---- Notas flotantes tipo Post-it — clic derecho sobre el lienzo vacío
+  // abre un menú con "+ Nueva nota aquí" (ver ContextMenu.jsx). Antes era
+  // doble-clic, detectado "a mano" porque el dblclick nativo choca con los
+  // listeners de arrastre/zoom de d3 — un parche frágil que ya se rompió
+  // una vez (ver historial de App.jsx). El clic derecho es un evento propio
+  // que d3 no toca, y ya es el lenguaje que usa el resto de la app (clic
+  // derecho en una nota = menú de color).
+  const [canvasMenu, setCanvasMenu] = useState(null);
+  const [nodeDraftsMenu, setNodeDraftsMenu] = useState(null);
+  function handleCanvasContextMenu(e) {
+    // Misma exclusión por forma concreta de nodo que ya se necesitaba antes
+    // (ver FloatingNote.jsx/ForceGraph.jsx): no abrir este menú si el clic
+    // derecho fue sobre un nodo del árbol, una nota (que tiene su propio
+    // menú de color) o cualquier control de la UI encima del lienzo.
+    const NODE_SHAPE_TAGS = new Set(["circle", "polygon", "text", "line", "ellipse", "foreignobject", "div"]);
     const tag = e.target.tagName ? e.target.tagName.toLowerCase() : "";
-    if (tag === "circle" || tag === "text" || e.target.closest(".floating-note, button, input, textarea, select")) return;
+    if (NODE_SHAPE_TAGS.has(tag) || e.target.closest(".floating-note, button, input, textarea, select, .indicators-panel, .color-legend")) return;
+    e.preventDefault();
     // Las notas se posicionan relativas a treeAreaRef (todo el tab, no solo
     // el lienzo) — ver el comentario junto a su render más abajo.
     const rect = treeAreaRef.current.getBoundingClientRect();
     const rawX = e.clientX - rect.left;
     const rawY = e.clientY - rect.top;
-
-    const now = Date.now();
-    const last = lastCanvasClickRef.current;
-    const isDouble = now - last.time < 450 && Math.hypot(rawX - last.x, rawY - last.y) < 28;
-    lastCanvasClickRef.current = { time: isDouble ? 0 : now, x: rawX, y: rawY };
-    if (!isDouble) return;
-
-    const x = Math.round(Math.max(0, rawX - 66));
-    const y = Math.round(Math.max(0, rawY - 29));
+    setCanvasMenu({ screenX: e.clientX, screenY: e.clientY, noteX: Math.round(Math.max(0, rawX - 66)), noteY: Math.round(Math.max(0, rawY - 29)) });
+  }
+  async function createNoteAt(x, y) {
     try {
       const row = await db.insertNote(userId, { text: "", x, y });
       setNotes((prev) => [...prev, row]);
       setEditingNoteId(row.id);
+      setSaveError(false);
+    } catch (e) { setSaveError(true); }
+  }
+  // Desde ClipboardComposer: a diferencia de createNoteAt, el texto ya viene
+  // terminado (el usuario lo escribió/revisó en el composer), así que la
+  // nota nace con su texto final — no entra en modo edición.
+  async function createNoteFromComposer(text) {
+    try {
+      const row = await db.insertNote(userId, { text, x: 80, y: 80 });
+      setNotes((prev) => [...prev, row]);
       setSaveError(false);
     } catch (e) { setSaveError(true); }
   }
@@ -312,46 +440,8 @@ function PendientesApp({ userId, userEmail }) {
     return row.id;
   }, [userId]);
 
-  const hasSeedData = items.some((i) => i.seed) || notes.some((n) => n.seed) || Object.values(projects).some((list) => list.some((p) => p.seed));
-
-  async function insertTestData() {
-    // Un solo clic accidental aquí reemplaza los 50 datos de prueba — igual
-    // de irreversible en la práctica que "Eliminar", así que también pide
-    // confirmación (más liviana que ese modal porque esto no toca nada que
-    // el usuario haya creado a mano, solo lo re-siembra).
-    const confirmMsg = hasSeedData
-      ? "Esto reemplaza los datos de prueba actuales por un set nuevo de 50. No toca lo que hayas agregado tú. ¿Continuar?"
-      : "Esto agrega 50 pendientes/proyectos/notas de prueba. ¿Continuar?";
-    if (!window.confirm(confirmMsg)) return;
-    const seed = buildTestData({ currentMonthKey, nextMonthKey, currentWeekStart, nextWeekStart });
-    try {
-      if (hasSeedData) await db.deleteSeedData(userId);
-      await db.bulkInsertTestData(userId, seed);
-      const fresh = await db.fetchAllData(userId);
-      setItems(fresh.items);
-      setProjects(fresh.projects);
-      setNotes(fresh.notes);
-      setSaveError(false);
-    } catch (e) { setSaveError(true); }
-  }
-
-  async function deleteTestData() {
-    try {
-      await db.deleteSeedData(userId);
-      setItems((prev) => prev.filter((i) => !i.seed));
-      setProjects((prev) => {
-        const next = {};
-        Object.entries(prev).forEach(([catId, list]) => { next[catId] = list.filter((p) => !p.seed); });
-        return next;
-      });
-      setNotes((prev) => prev.filter((n) => !n.seed));
-      setSaveError(false);
-    } catch (e) { setSaveError(true); }
-    setShowDeleteTestModal(false);
-  }
-
   function handleExport() {
-    const payload = JSON.stringify({ items, projects, notes }, null, 2);
+    const payload = JSON.stringify({ items, projects, notes, subPendientes }, null, 2);
     const blob = new Blob([payload], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -385,6 +475,7 @@ function PendientesApp({ userId, userEmail }) {
         setItems(fresh.items);
         setProjects(fresh.projects);
         setNotes(fresh.notes);
+        setSubPendientes(fresh.subPendientes);
         setSaveError(false);
       } catch (err) {
         console.error("Error restaurando el respaldo:", err);
@@ -422,22 +513,29 @@ function PendientesApp({ userId, userEmail }) {
         <button className="btn btn-ghost" onClick={handleExport}>⬇ Descargar respaldo</button>
         <button className="btn btn-ghost" onClick={handleImportClick}>⬆ Restaurar respaldo</button>
         <input type="file" accept="application/json" ref={fileInputRef} style={{ display: "none" }} onChange={handleImportFile} />
-        <button className="btn btn-ghost" onClick={insertTestData}>🧪 {hasSeedData ? "Regenerar" : "Insertar"} 50 datos de prueba</button>
-        {hasSeedData && (
-          <button className="btn btn-ghost" onClick={() => setShowDeleteTestModal(true)} style={{ color: "var(--sema-red)", borderColor: "var(--sema-red)" }}>
-            🗑 Eliminar datos de prueba
-          </button>
-        )}
+        <button className="btn btn-ghost" onClick={() => setShowCompletedModal(true)}>📜 Completados</button>
+        <button className="btn btn-ghost" onClick={() => setShowColorController(true)}>🎨 Colores</button>
       </div>
 
-      {showDeleteTestModal && (
-        <DeleteTestDataModal onConfirm={deleteTestData} onCancel={() => setShowDeleteTestModal(false)} />
+      {showCompletedModal && (
+        <CompletedItemsModal items={items} projects={projects} onRevert={toggleDone} onClose={() => setShowCompletedModal(false)} />
+      )}
+
+      {showColorController && (
+        <ColorControllerModal
+          categories={CATEGORIES}
+          projects={projects}
+          overrides={colorOverrides}
+          onChange={handleColorOverrideChange}
+          onReset={handleColorOverrideReset}
+          onClose={() => setShowColorController(false)}
+        />
       )}
 
       <main className="pnd-main">
         {tab === "tree" && (
           <div className={`tree-tab-area ${treeExpanded ? "tree-expanded" : ""}`} ref={treeAreaRef}>
-            <div className="cosmos-stage tree-canvas" ref={canvasRef} onClick={handleCanvasClick}>
+            <div className="cosmos-stage tree-canvas" ref={canvasRef} onContextMenu={handleCanvasContextMenu}>
               <button
                 type="button"
                 className="icon-btn tree-expand-btn"
@@ -448,10 +546,14 @@ function PendientesApp({ userId, userEmail }) {
               </button>
               <ForceGraph
                 nodes={arbolViewModel.nodes} links={arbolViewModel.links} byId={arbolViewModel.byId}
+                tipificadoFilter={tipificadoFilter}
                 onNodeClick={(node) => {
-                  if (node.type !== "item") return;
+                  // Un subpendiente no tiene detalle propio — abre el mismo
+                  // popover de su pendiente padre (node.itemId apunta al
+                  // padre en ambos tipos, ver useArbolViewModel.js).
+                  if (node.type !== "item" && node.type !== "subpendiente") return;
                   const item = items.find((i) => i.id === node.itemId);
-                  if (item) setDetailItem(item);
+                  if (item) { setDetailItem(item); setDetailSource("grafo"); }
                 }}
                 onNodeDoubleClick={(node) => {
                   if (node.type === "category") {
@@ -460,13 +562,26 @@ function PendientesApp({ userId, userEmail }) {
                     setFormState({ mode: "create", defaultCategory: node.categoryId, defaultProject: node.projectId });
                   }
                 }}
+                onNodeContextMenu={(node, x, y) => {
+                  const drafts = listDrafts(draftNodeKey(node.categoryId, node.projectId));
+                  if (drafts.length === 0) return;
+                  setNodeDraftsMenu({ screenX: x, screenY: y, categoryId: node.categoryId, projectId: node.projectId, drafts });
+                }}
               />
             </div>
 
-            {/* Las notas expandidas viven por fuera del lienzo (aunque su x/y
-                se siga midiendo desde este mismo wrapper) para que se puedan
-                arrastrar libremente por toda esta área, sin quedar recortadas
-                por el overflow:hidden del lienzo. */}
+            {/* Indicadores, leyenda de colores y notas expandidas viven por
+                fuera del lienzo (aunque su posición se siga midiendo desde
+                este mismo wrapper) para que se puedan arrastrar libremente
+                por toda esta área — incluso fuera del grafo, sobre el fondo
+                sin usar — sin quedar recortadas por el overflow:hidden del
+                lienzo. */}
+            <IndicatorsPanel
+              items={items} projects={projects} notes={notes}
+              tipificadoFilter={tipificadoFilter} onToggleFilter={toggleTipificadoFilter}
+              defaultPos={indicatorsDefaultPos}
+            />
+            <ColorLegend items={items} currentMonthKey={currentMonthKey} currentWeekStart={currentWeekStart} defaultPos={legendDefaultPos} />
             {notes.filter((n) => !n.collapsed).map((note) => (
               <FloatingNote key={note.id} note={note} editing={editingNoteId === note.id}
                 onStartEdit={startEditNote} onCommit={(text) => commitNoteText(note.id, text)} onDelete={deleteNote}
@@ -507,21 +622,21 @@ function PendientesApp({ userId, userEmail }) {
               </div>
             )}
             <nav className="pnd-tabs" style={{ marginTop: 0, marginBottom: 20 }}>
-              <button className={`pnd-tab ${tableroView === "tipificacion" ? "active" : ""}`} onClick={() => setTableroView("tipificacion")}>Por Tipificación</button>
+              <button className={`pnd-tab ${tableroView === "tipificacion" ? "active" : ""}`} onClick={() => setTableroView("tipificacion")}>Por Temporalidad</button>
               <button className={`pnd-tab ${tableroView === "categoria" ? "active" : ""}`} onClick={() => setTableroView("categoria")}>Backlog</button>
             </nav>
             {tableroView === "tipificacion" ? (
               <TableroView
-                items={items} projects={projects} currentMonthKey={currentMonthKey} currentWeekStart={currentWeekStart}
+                items={items} projects={projects} currentMonthKey={currentMonthKey} currentWeekStart={currentWeekStart} todayStr={todayStr}
                 onDropItem={handleTableroDrop} onRenew={renewItem}
                 onEditOverdue={(item) => setFormState({ mode: "edit", item })}
-                onOpenDetail={setDetailItem} dragGhost={dragGhost}
+                onOpenDetail={openDetailFromTablero} dragGhost={dragGhost}
               />
             ) : (
               <CategoriaBoardView
-                items={items} projects={projects} todayStr={`${currentMonthKey}-01`} onSchedule={reassignItem}
+                items={items} projects={projects} todayStr={todayStr} onSchedule={reassignItem}
                 onCreate={(categoryId) => setFormState({ mode: "create", defaultCategory: categoryId, defaultProject: null })}
-                onOpenDetail={setDetailItem} dragGhost={dragGhost}
+                onOpenDetail={openDetailFromTablero} dragGhost={dragGhost}
               />
             )}
           </div>
@@ -530,12 +645,17 @@ function PendientesApp({ userId, userEmail }) {
 
       {detailItem && (
         <ItemDetailPopover
-          item={detailItem} projects={projects} currentMonthKey={currentMonthKey} currentWeekStart={currentWeekStart}
-          onClose={() => setDetailItem(null)}
-          onToggleDone={(id) => { toggleDone(id); setDetailItem(null); }}
-          onEdit={(item) => { setDetailItem(null); setFormState({ mode: "edit", item }); }}
-          onDelete={(id) => { deleteItemById(id); setDetailItem(null); }}
-          onRenew={(id) => { renewItem(id); setDetailItem(null); }}
+          key={detailItem.id}
+          item={detailItem} projects={projects} subPendientes={subPendientes[detailItem.id]} currentMonthKey={currentMonthKey} currentWeekStart={currentWeekStart} todayStr={todayStr}
+          confirmDone={detailSource === "grafo"}
+          onClose={() => { setDetailItem(null); setDetailSource(null); }}
+          onToggleDone={(id) => { toggleDone(id); setDetailItem(null); setDetailSource(null); }}
+          onEdit={(item) => { setDetailItem(null); setDetailSource(null); setFormState({ mode: "edit", item }); }}
+          onDelete={(id) => { deleteItemById(id); setDetailItem(null); setDetailSource(null); }}
+          onRenew={(id) => { renewItem(id); setDetailItem(null); setDetailSource(null); }}
+          onAddSubPendiente={addSubPendiente}
+          onDeleteSubPendiente={deleteSubPendiente}
+          onEditSubPendiente={editSubPendiente}
         />
       )}
 
@@ -557,6 +677,30 @@ function PendientesApp({ userId, userEmail }) {
       {dragGhost.preview && (
         <div className="drag-ghost" style={{ left: dragGhost.preview.x, top: dragGhost.preview.y }}>{dragGhost.preview.label}</div>
       )}
+
+      {canvasMenu && (
+        <ContextMenu
+          x={canvasMenu.screenX} y={canvasMenu.screenY}
+          items={[{ label: "+ Nueva nota aquí", onClick: () => createNoteAt(canvasMenu.noteX, canvasMenu.noteY) }]}
+          onClose={() => setCanvasMenu(null)}
+        />
+      )}
+
+      {nodeDraftsMenu && (
+        <ContextMenu
+          x={nodeDraftsMenu.screenX} y={nodeDraftsMenu.screenY}
+          items={nodeDraftsMenu.drafts
+            .slice()
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+            .map((draft) => ({
+              label: `📝 ${draft.name || "(sin título)"}`,
+              onClick: () => setFormState({ mode: "create", defaultCategory: nodeDraftsMenu.categoryId, defaultProject: nodeDraftsMenu.projectId, resumeDraft: draft }),
+            }))}
+          onClose={() => setNodeDraftsMenu(null)}
+        />
+      )}
+
+      <ClipboardComposer onConvert={createNoteFromComposer} />
     </div>
   );
 }

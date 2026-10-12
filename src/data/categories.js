@@ -26,7 +26,7 @@ export const PROJECT_FIELD_BY_CATEGORY = {
 
 // Áreas por defecto de CESDE — se siembran una sola vez, la primera vez
 // que el usuario carga la app y todavía no tiene ninguna guardada.
-export const DEFAULT_CESDE_AREAS = ["Backend", "Frontend", "New Tech", "Platzi", "CESDE"];
+export const DEFAULT_CESDE_AREAS = ["Backend", "Frontend", "New Tech", "Platzi"];
 
 // Versión más clara (mezclada hacia blanco) del color de una categoría —
 // el nodo de la categoría usa el color base (el más intenso), y cada capa

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { renderInlineMarkdown } from "../miniMarkdown.jsx";
+import { useDraggablePosition } from "../../hooks/useDraggablePosition.js";
 
 // Nota flotante tipo Post-it, expandida. Interacciones:
 //   - Arrastrar: clic sostenido y mover (igual que los nodos del árbol).
@@ -11,7 +13,6 @@ import { createPortal } from "react-dom";
 //     lista de notas encogidas (ver CollapsedNoteChip más abajo).
 //   - Clic derecho: menú rápido para cambiar de color o eliminar la nota.
 export const NOTE_COLORS = ["#F4E4B8", "#F7C6D9", "#C8ECD9", "#C7DFF7", "#E3D2F5", "#F7D8B8"];
-const DRAG_THRESHOLD = 4;
 const CLICK_DELAY = 300;
 
 // El menú de clic derecho se monta con un portal directo a <body> — antes
@@ -37,9 +38,11 @@ function NoteColorMenu({ x, y, onPick, onDelete, onClose }) {
 
 export function FloatingNote({ note, editing, onStartEdit, onCommit, onDelete, onMove, onToggleCollapse, onColorChange }) {
   const [draft, setDraft] = useState(note.text);
-  const [pos, setPos] = useState({ x: note.x, y: note.y });
+  const { pos, setPos, handleMouseDown: startDrag, didMove } = useDraggablePosition(
+    { x: note.x, y: note.y },
+    (x, y) => { if (typeof onMove === "function") onMove(note.id, x, y); },
+  );
   const [menu, setMenu] = useState(null);
-  const dragRef = useRef({ moved: false, startX: 0, startY: 0, origX: 0, origY: 0, curX: 0, curY: 0 });
   const clickTimerRef = useRef(null);
   const bg = note.color || NOTE_COLORS[0];
 
@@ -48,34 +51,14 @@ export function FloatingNote({ note, editing, onStartEdit, onCommit, onDelete, o
   useEffect(() => { setPos({ x: note.x, y: note.y }); }, [note.x, note.y]);
   useEffect(() => () => { if (clickTimerRef.current) clearTimeout(clickTimerRef.current); }, []);
 
-  function handleMouseMove(e) {
-    const d = dragRef.current;
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
-    if (!d.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD) d.moved = true;
-    if (d.moved) {
-      const x = Math.max(0, d.origX + dx);
-      const y = Math.max(0, d.origY + dy);
-      d.curX = x; d.curY = y;
-      setPos({ x, y });
-    }
-  }
-  function handleMouseUp() {
-    window.removeEventListener("mousemove", handleMouseMove);
-    window.removeEventListener("mouseup", handleMouseUp);
-    const d = dragRef.current;
-    if (d.moved && typeof onMove === "function") onMove(note.id, d.curX, d.curY);
-  }
   function handleMouseDown(e) {
     if (editing || e.button !== 0) return;
     if (e.target.closest(".note-del")) return;
-    dragRef.current = { moved: false, startX: e.clientX, startY: e.clientY, origX: pos.x, origY: pos.y, curX: pos.x, curY: pos.y };
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    startDrag(e);
   }
 
   function handleClick() {
-    if (dragRef.current.moved || editing) return;
+    if (didMove() || editing) return;
     if (clickTimerRef.current) return;
     clickTimerRef.current = setTimeout(() => {
       clickTimerRef.current = null;
@@ -84,7 +67,7 @@ export function FloatingNote({ note, editing, onStartEdit, onCommit, onDelete, o
   }
   function handleDoubleClick() {
     if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; }
-    if (dragRef.current.moved || editing) return;
+    if (didMove() || editing) return;
     if (typeof onToggleCollapse === "function") onToggleCollapse(note.id);
   }
   function handleContextMenu(e) {
@@ -116,7 +99,7 @@ export function FloatingNote({ note, editing, onStartEdit, onCommit, onDelete, o
         />
       ) : (
         <>
-          {note.text}
+          {renderInlineMarkdown(note.text)}
           <button className="note-del" onClick={(e) => { e.stopPropagation(); onDelete(note.id); }} aria-label="Quitar nota">✕</button>
         </>
       )}

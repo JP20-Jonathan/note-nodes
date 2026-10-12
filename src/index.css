@@ -87,6 +87,10 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
   padding: 7px 11px; font-size: 12.5px; cursor: pointer; font-family: 'Work Sans', sans-serif;
 }
 .btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
+/* Segundo clic requerido antes de marcar hecho desde el Grafo — ver
+   ItemDetailPopover (confirmDone). Naranja de aviso, no rojo de peligro,
+   porque no es destructivo, solo pide confirmar la intención. */
+.btn-confirm-armed, .btn-confirm-armed:hover { color: var(--accent); border-color: var(--accent); }
 
 .item-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .chip { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim); }
@@ -95,6 +99,11 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
 .chip.deadline-far { border-color: var(--sema-green); color: var(--sema-green); }
 .empty-state { text-align: center; color: var(--text-dim); font-size: 13.5px; border: 1px dashed var(--border); border-radius: 16px; padding: 22px 16px; }
 .field-error { color: var(--sema-red); font-size: 12.5px; margin: 0; }
+.draft-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: rgba(232,163,61,0.12); border: 1px solid var(--accent); border-radius: 10px;
+  padding: 8px 10px; font-size: 12.5px; color: var(--text);
+}
 
 /* Modal formulario */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(8,10,8,.6); z-index: 1056; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-y: auto; }
@@ -115,6 +124,64 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
 }
 .cap-note { font-size: 11.5px; color: var(--text-dim); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+
+/* RichTextField (src/components/RichTextField.jsx) — contentEditable con
+   negrilla visible (Cmd/Ctrl+B), usado por los campos "Notas (opcional)" de
+   un pendiente y de un subpendiente. Mismo tratamiento visual que
+   .field input/select, para que no se note que es un contentEditable y no
+   un <textarea> normal. */
+.rich-text-field {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 10px; padding: 10px 11px; font-size: 14px; line-height: 1.5;
+  font-family: 'Work Sans', sans-serif; outline: none; overflow-y: auto; max-height: 220px;
+}
+.rich-text-field:empty::before { content: attr(data-placeholder); color: var(--text-dim); }
+.rich-text-field-sm { font-size: 12.5px; padding: 8px 10px; max-height: 120px; }
+
+/* Subpendientes (ver ItemDetailPopover.jsx) — lista compacta de tareas más
+   chicas dentro de un pendiente, cada una con nombre + nota propia. */
+.subpendiente-form { display: flex; flex-direction: column; gap: 8px; }
+.subpendiente-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.subpendiente-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.subpendiente-row {
+  display: flex; align-items: flex-start; gap: 8px; background: var(--surface-2);
+  border-radius: 10px; padding: 8px 10px;
+}
+.subpendiente-row-body { flex: 1; min-width: 0; }
+.subpendiente-row-name { font-size: 13px; }
+.subpendiente-row-notes { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.subpendiente-row-del { width: 26px; height: 26px; min-width: 26px; font-size: 12px; flex-shrink: 0; }
+
+/* Contador de subpendientes, al lado del botón "Eliminar" (no encima) —
+   solo si tiene al menos uno. Un elemento más en el flujo de .modal-actions,
+   no un badge superpuesto. Es un botón real (no un span): al tocarlo abre
+   la red de tarjetas conectadas (ver SubPendientesWeb.jsx). */
+.subpendiente-count-badge {
+  display: inline-flex; align-items: center; justify-content: center; align-self: center;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+  background: var(--accent); color: var(--bg); font-size: 11px; font-weight: 700;
+  border: none; cursor: pointer; font-family: 'Work Sans', sans-serif;
+}
+.subpendiente-count-badge:hover { filter: brightness(1.1); }
+
+/* SubPendientesWeb — tarjetas chicas arrastrables conectadas por líneas al
+   pendiente central, dentro del mismo .modal-backdrop que ItemDetailPopover
+   (mismo fondo oscurecido, mismo "clic afuera cierra"). Vive ANTES de
+   .pnd-modal en el DOM (ver el render) a propósito: sin z-index propio, el
+   orden del DOM ya basta para que el popover grande quede arriba, y la red
+   de tarjetas detrás/alrededor, nunca tapándolo. */
+.subweb-overlay { position: absolute; inset: 0; cursor: default; }
+.subweb-lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.subweb-card {
+  position: absolute; cursor: grab; user-select: none;
+  background: rgba(30,42,34,0.92); border: 1px solid var(--border); border-radius: 12px;
+  padding: 9px 11px; font-size: 12px; color: var(--text); box-shadow: 0 8px 20px rgba(0,0,0,.45);
+}
+.subweb-card:active { cursor: grabbing; }
+.subweb-card-pendiente { border-color: var(--accent); border-width: 1.5px; font-weight: 600; text-align: center; }
+.subweb-card-name { font-weight: 600; }
+.subweb-card-notes { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
+.subweb-close { position: absolute; top: 16px; right: 16px; width: auto; padding: 0 12px; gap: 6px; }
 
 /* Tablero */
 .tablero-complete-zone {
@@ -145,7 +212,7 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
 .categoria-schedule-box-head { font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
 .categoria-schedule-box-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 
-.categoria-schedule-box--main { flex: 1; min-height: 90px; padding: 22px; text-align: center; }
+.categoria-schedule-box--main { flex: 1 1 320px; max-width: 420px; min-height: 170px; padding: 22px; text-align: center; }
 .categoria-schedule-box--main .categoria-schedule-box-head { justify-content: center; font-size: 16px; }
 .categoria-schedule-box--main .categoria-schedule-box-list { justify-content: center; }
 .categoria-schedule-box--side { flex: 0 0 170px; min-height: 170px; }
@@ -158,10 +225,17 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
 .tablero-row-label { font-size: 12.5px; color: var(--text-dim); margin: 22px 0 8px; text-transform: uppercase; letter-spacing: .05em; }
 .tablero-row-label:first-child { margin-top: 0; }
 .tablero-grid { display: grid; gap: 16px; }
-.tablero-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+/* 4 columnas parejas en vez de 3 — así cualquiera de las 3 columnas de
+   Semana puede pedir el doble de ancho (⤢ expandir) sin que las otras dos
+   se caigan a una fila nueva: 2+1+1 = 4 tracks siempre cierran la fila. */
+.tablero-grid.cols-3 { grid-template-columns: repeat(4, 1fr); }
+.tablero-grid.cols-3 .tab-col.expanded-col { grid-column: span 2; }
 .tablero-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
 .tablero-grid.cols-wrap { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
-@media (max-width: 760px) { .tablero-grid.cols-3, .tablero-grid.cols-2 { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {
+  .tablero-grid.cols-3, .tablero-grid.cols-2 { grid-template-columns: 1fr; }
+  .tablero-grid.cols-3 .tab-col.expanded-col { grid-column: span 1; }
+}
 
 .tab-col {
   border-radius: 18px; overflow: hidden; display: flex; flex-direction: column;
@@ -176,27 +250,27 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
 .tab-col-head.drag-over { background: rgba(232,163,61,0.14); }
 .tab-col.special { border-color: var(--accent); }
 .tab-col-drag-handle { cursor: grab; color: var(--text-dim); font-size: 13px; letter-spacing: -1px; }
-.tab-col-add-btn, .tab-col-size-btn {
+.tab-col-add-btn {
   width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   background: transparent; border: 1px solid var(--border); color: var(--text-dim); cursor: pointer;
-  font-size: 11px; font-weight: 700; line-height: 1; border-radius: 6px; padding: 0;
+  font-size: 13px; font-weight: 400; line-height: 1; border-radius: 6px; padding: 0;
 }
-.tab-col-add-btn { font-size: 13px; font-weight: 400; }
-.tab-col-add-btn:hover, .tab-col-size-btn:hover { color: var(--text); border-color: var(--text-dim); }
+.tab-col-add-btn:hover { color: var(--text); border-color: var(--text-dim); }
 .tab-col-expand-btn {
   background: transparent; border: none; color: var(--text-dim); cursor: pointer;
   font-size: 13px; line-height: 1; padding: 2px 4px; border-radius: 6px;
 }
 .tab-col-expand-btn:hover { color: var(--text); background: var(--surface-2); }
 /* Compacta por defecto (se ve scroll adentro si hay más de ~4-5) — el
-   botón ⤢ de la cabecera la deja crecer del todo si se prefiere sin scroll.
-   El tamaño S/M/L (tab-col.size-*) ajusta cuánto se ve antes de tener que
-   hacer scroll, y en la grilla "wrap" del Backlog además el ancho. */
+   botón ⤢ de la cabecera la deja crecer del todo si se prefiere sin scroll,
+   y en la grilla "wrap" del Backlog además el ancho. Se recuerda por
+   navegador (ver useColumnLayout), no se pierde al cambiar de vista. */
 .tab-col-list { padding: 4px 10px 12px; flex: 1; max-height: 300px; overflow-y: auto; }
 .tab-col-list.expanded { max-height: none; overflow-y: visible; }
-.tab-col.size-large .tab-col-list:not(.expanded) { max-height: 480px; }
-.tablero-grid.cols-wrap .tab-col.size-large { grid-column: span 2; }
-@media (max-width: 640px) { .tablero-grid.cols-wrap .tab-col.size-large { grid-column: span 1; } }
+.tablero-grid.cols-wrap .tab-col.expanded-col { grid-column: span 2; }
+@media (max-width: 640px) {
+  .tablero-grid.cols-wrap .tab-col.expanded-col { grid-column: span 1; }
+}
 .tab-row { display: flex; align-items: center; gap: 8px; padding: 9px 4px; border-bottom: 1px solid var(--border); border-top: 2px solid transparent; transition: opacity .15s ease, border-color .15s ease; }
 .tab-row:last-child { border-bottom: none; }
 .tab-row[draggable="true"] { cursor: grab; }
@@ -241,6 +315,39 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
 }
 .tree-zoom-controls button:hover { border-color: var(--text-dim); }
 
+/* Panel de indicadores y leyenda de colores — SIN fondo a propósito, flotan
+   directamente sobre el grafo (arrastrables, ver .draggable-float más abajo)
+   en vez de sentirse como un panel de control aparte. El text-shadow hace
+   las veces de "fondo" para que el texto se siga leyendo encima de un gema
+   clara del árbol, sin necesitar una caja detrás. */
+.indicators-panel, .color-legend {
+  position: absolute; z-index: 30;
+  font-size: 12px; color: var(--text);
+  display: flex; flex-direction: column; gap: 6px;
+  text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 6px rgba(0,0,0,.6);
+}
+/* Posición siempre inline (left/top, ver useDraggablePosition) — arrancan
+   "como estaban" (esquina del lienzo) solo porque App.jsx mide esa esquina
+   y se la pasa como default, no por nada fijo acá. */
+.draggable-float { cursor: grab; user-select: none; }
+.draggable-float:active { cursor: grabbing; }
+.indicators-panel { width: 190px; max-width: calc(100% - 20px); }
+.indicators-totals { display: flex; justify-content: space-between; gap: 6px; color: var(--text-dim); font-size: 11px; flex-wrap: wrap; }
+.indicators-totals strong { color: var(--text); }
+.indicators-list { display: flex; flex-direction: column; gap: 3px; }
+.indicator-count { font-size: 12px; }
+.indicators-filters { border-top: 1px solid rgba(255,255,255,0.18); padding-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.indicators-filters-label { font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+.indicator-filter-checkbox { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+
+.color-legend { font-size: 11.5px; color: var(--text-dim); }
+.color-legend-title { font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+.color-legend-row { display: flex; align-items: center; gap: 7px; }
+.color-legend-row strong { color: var(--text); }
+.color-legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+@keyframes color-legend-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.color-legend-dot-pulse { animation: color-legend-pulse 1.6s ease-in-out infinite; }
+
 /* "Pantalla completa" propia (no la API nativa del navegador): un overlay
    fijo que tapa toda la ventana con el mismo fondo de la app, para no
    pelear con modales ni con el gesto de salir de la Fullscreen API real.
@@ -254,22 +361,27 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
 .tree-expanded .cosmos-stage.tree-canvas { flex: 1; height: auto; min-height: 0; padding: 0; }
 
 /* Solo el filter (glow) titila — la opacidad se deja libre para que el
-   atenuado por foco (ForceGraph) siga funcionando aunque el nodo titile. */
+   atenuado por foco (ForceGraph) siga funcionando aunque el nodo titile.
+   Rojo (atrasado) y verde (esta semana/en curso) titilan más fuerte y más
+   rápido que el amarillo (próxima semana) A PROPÓSITO — son los dos
+   estados más importantes (algo venció, o algo se está trabajando ahora
+   mismo) y tienen que distinguirse a simple vista del resto, no solo por
+   el color sino por lo notorio del parpadeo. */
 @keyframes node-pulse-green {
-  0%, 100% { filter: drop-shadow(0 0 3px var(--glow-active-green)); }
-  50% { filter: drop-shadow(0 0 11px var(--glow-active-green)); }
+  0%, 100% { filter: drop-shadow(0 0 4px var(--glow-active-green)); }
+  50% { filter: drop-shadow(0 0 17px var(--glow-active-green)); }
 }
 @keyframes node-pulse-yellow {
   0%, 100% { filter: drop-shadow(0 0 3px var(--sema-yellow)); }
   50% { filter: drop-shadow(0 0 11px var(--sema-yellow)); }
 }
 @keyframes node-pulse-red {
-  0%, 100% { filter: drop-shadow(0 0 3px var(--glow-urgent-red)); }
-  50% { filter: drop-shadow(0 0 13px var(--glow-urgent-red)); }
+  0%, 100% { filter: drop-shadow(0 0 5px var(--glow-urgent-red)); }
+  50% { filter: drop-shadow(0 0 20px var(--glow-urgent-red)); }
 }
-.node-pulse-green { animation: node-pulse-green 1.6s ease-in-out infinite; }
+.node-pulse-green { animation: node-pulse-green 1.15s ease-in-out infinite; }
 .node-pulse-yellow { animation: node-pulse-yellow 1.6s ease-in-out infinite; }
-.node-pulse-red { animation: node-pulse-red 1.6s ease-in-out infinite; }
+.node-pulse-red { animation: node-pulse-red 1s ease-in-out infinite; }
 
 /* El sol respira despacio y siempre — zona neutra (8-10 pendientes de esta
    semana, ver sunLoadStyle en ForceGraph): solo para que el centro del árbol
@@ -369,3 +481,77 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
   margin-left: 4px; background: transparent; border: none; color: var(--sema-red);
   font-size: 12px; cursor: pointer; padding: 4px 6px; white-space: nowrap;
 }
+
+/* ContextMenu genérico (src/components/ContextMenu.jsx) — mismo tratamiento
+   visual que .note-color-menu, pero como lista vertical de ítems de texto
+   en vez de swatches de color. */
+.context-menu-backdrop { position: fixed; inset: 0; z-index: 90; background: transparent; }
+.context-menu {
+  position: fixed; z-index: 95; display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 6px; box-shadow: 0 10px 24px rgba(0,0,0,.5); transform: translate(-10px, 6px);
+  min-width: 160px;
+}
+.context-menu-item {
+  background: transparent; border: none; color: var(--text); text-align: left;
+  font-size: 12.5px; padding: 7px 10px; border-radius: 8px; cursor: pointer;
+  font-family: 'Work Sans', sans-serif; white-space: nowrap;
+}
+.context-menu-item:hover { background: var(--surface); }
+
+/* ClipboardComposer — fixed al viewport (no al lienzo), esquina inferior
+   izquierda de la pantalla: a propósito distinto del panel de indicadores
+   (arriba-izquierda del lienzo) y la leyenda (abajo-derecha del lienzo),
+   para no competir por el mismo espacio. Estética "hoja de papel" (clara,
+   texto oscuro) a propósito distinta del resto de la UI (oscura) — así se
+   lee como una herramienta de escritura, no como un panel de control. */
+.clipboard-composer-tab {
+  position: fixed; bottom: 16px; left: 16px; z-index: 40;
+  background: #E8DCC3; color: #3A2E1A; border: none; border-radius: 10px 10px 2px 2px;
+  padding: 9px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  font-family: 'Work Sans', sans-serif; box-shadow: 0 6px 16px rgba(0,0,0,.45);
+}
+.clipboard-composer {
+  position: fixed; bottom: 16px; left: 16px; z-index: 40;
+  width: 380px; max-width: calc(100vw - 32px);
+  background: #E8DCC3; color: #3A2E1A; border-radius: 4px 4px 10px 10px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.5);
+  display: flex; flex-direction: column;
+  font-family: 'Work Sans', sans-serif;
+}
+/* Barra metálica del "clip" de un portapapeles — puramente decorativa. */
+.clipboard-composer-clip {
+  height: 14px; margin: 0 40px; border-radius: 0 0 6px 6px;
+  background: linear-gradient(180deg, #B8BEC4, #7E858C);
+  box-shadow: 0 2px 4px rgba(0,0,0,.35);
+}
+.clipboard-composer-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 12px 0; font-size: 12px; font-weight: 700; color: #5B4A2A;
+}
+.clipboard-composer-min { background: transparent; border: none; color: #5B4A2A; cursor: pointer; font-size: 13px; padding: 2px 6px; }
+.clipboard-composer-toolbar { display: flex; gap: 4px; padding: 6px 12px 0; }
+.clipboard-composer-toolbar button {
+  background: rgba(58,46,26,0.08); border: 1px solid rgba(58,46,26,0.18); border-radius: 6px;
+  color: #3A2E1A; font-size: 11px; padding: 3px 8px; cursor: pointer; font-family: 'Work Sans', sans-serif;
+}
+.clipboard-composer-toolbar button:hover { background: rgba(58,46,26,0.16); }
+/* contentEditable real (no textarea) — así la negrilla/listas se ven
+   formateadas en el momento, sin alternar a una vista previa aparte. Línea
+   más alta (line-height) y fuente más grande que la v1 textarea, a pedido
+   explícito ("el renglón sea más largo"). */
+.clipboard-composer-editor {
+  margin: 8px 12px 0; min-height: 220px; max-height: 50vh; overflow-y: auto;
+  background: rgba(255,255,255,0.35); border: 1px solid rgba(58,46,26,0.18); border-radius: 6px;
+  padding: 10px 12px; font-size: 14px; line-height: 1.7; color: #3A2E1A; font-family: 'Work Sans', sans-serif;
+  outline: none;
+}
+.clipboard-composer-editor:empty::before { content: attr(data-placeholder); color: rgba(58,46,26,0.45); }
+.clipboard-composer-editor ul { margin: 2px 0; padding-left: 20px; }
+.clipboard-composer-editor div { min-height: 1.7em; }
+.clipboard-composer-check {
+  align-self: flex-end; margin: 0 12px 12px; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--sema-green); border: none; color: #0b2a18; font-size: 15px; font-weight: 700;
+  cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,.35);
+}
+.clipboard-composer-check:disabled { opacity: 0.4; cursor: default; }
