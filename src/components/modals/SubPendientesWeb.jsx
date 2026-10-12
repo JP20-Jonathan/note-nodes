@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { renderInlineMarkdown } from "../miniMarkdown.jsx";
 import { SubPendienteForm } from "./SubPendienteForm.jsx";
 
@@ -63,6 +63,34 @@ export function SubPendientesWeb({ subPendientes, pendienteRect, onClose, onEdit
   const dragRef = useRef({ id: null, moved: false, startX: 0, startY: 0, origX: 0, origY: 0 });
   const dragEndedRef = useRef(false);
 
+  // positions solo trae entradas para los subpendientes que existían al
+  // montar esta red (ver useState de arriba). Si se añade uno nuevo con la
+  // red ya abierta, subPendientes crece pero positions no — sin backfill,
+  // pos.x/pos.y de abajo revienta sobre undefined en el MISMO render que
+  // trae el prop nuevo (un useEffect llega tarde: corre después de ese
+  // render, no antes). Por eso el backfill se calcula acá, de forma
+  // síncrona, y se usa en vez de `positions` para todo lo que sigue;
+  // además se vuelca a estado real para que sobreviva futuros renders y
+  // el arrastre (handleCardMouseDown) lo encuentre ahí.
+  const missing = subPendientes.filter((sub) => !positions[sub.id]);
+  const livePositions = missing.length === 0
+    ? positions
+    : {
+        ...positions,
+        ...defaultPositions(
+          pendienteRect.left + pendienteRect.width / 2,
+          pendienteRect.top + pendienteRect.height / 2,
+          Math.max(220, pendienteRect.width / 2 + 160),
+          missing,
+        ),
+      };
+
+  useEffect(() => {
+    if (missing.length === 0) return;
+    setPositions(livePositions);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subPendientes]);
+
   function handleMouseMove(e) {
     const d = dragRef.current;
     if (!d.id) return;
@@ -84,7 +112,7 @@ export function SubPendientesWeb({ subPendientes, pendienteRect, onClose, onEdit
   function handleCardMouseDown(id, e) {
     if (e.button !== 0 || editingId === id) return;
     e.stopPropagation();
-    const pos = positions[id];
+    const pos = livePositions[id];
     dragRef.current = { id, moved: false, startX: e.clientX, startY: e.clientY, origX: pos.x, origY: pos.y };
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
@@ -106,7 +134,7 @@ export function SubPendientesWeb({ subPendientes, pendienteRect, onClose, onEdit
     >
       <svg className="subweb-lines">
         {subPendientes.map((sub) => {
-          const pos = positions[sub.id];
+          const pos = livePositions[sub.id];
           const w = editingId === sub.id ? EDIT_CARD_WIDTH : CARD_WIDTH;
           const cy = pos.y + estimateCardHeight(sub.name, sub.notes) / 2;
           return (
@@ -121,7 +149,7 @@ export function SubPendientesWeb({ subPendientes, pendienteRect, onClose, onEdit
       </svg>
 
       {subPendientes.map((sub) => {
-        const pos = positions[sub.id];
+        const pos = livePositions[sub.id];
         const isEditing = editingId === sub.id;
         return (
           <div
