@@ -33,7 +33,11 @@ function rowToProject(row) {
 }
 
 function rowToNote(row) {
-  return { id: row.id, text: row.text, x: row.x, y: row.y, seed: row.seed, color: row.color || null, collapsed: !!row.collapsed };
+  return {
+    id: row.id, text: row.text, x: row.x, y: row.y, seed: row.seed,
+    color: row.color || null, collapsed: !!row.collapsed,
+    width: row.width || null, height: row.height || null,
+  };
 }
 
 // Un SubPendiente solo tiene nombre y nota propios — categoría, proyecto,
@@ -190,6 +194,11 @@ export async function updateNoteCollapsed(id, collapsed) {
   if (error) throw error;
 }
 
+export async function updateNoteSize(id, width, height) {
+  const { error } = await supabase.from("notes").update({ width, height }).eq("id", id);
+  if (error) throw error;
+}
+
 export async function deleteNote(id) {
   const { error } = await supabase.from("notes").delete().eq("id", id);
   if (error) throw error;
@@ -232,7 +241,10 @@ export async function replaceAllData(userId, { items, projects, notes, subPendie
   }
 
   if (notes && notes.length > 0) {
-    const rows = notes.map((n) => ({ user_id: userId, text: n.text, x: n.x, y: n.y, color: n.color || null, collapsed: !!n.collapsed }));
+    const rows = notes.map((n) => ({
+      user_id: userId, text: n.text, x: n.x, y: n.y, color: n.color || null, collapsed: !!n.collapsed,
+      width: n.width || null, height: n.height || null,
+    }));
     const { error } = await supabase.from("notes").insert(rows);
     if (error) throw error;
   }
