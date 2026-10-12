@@ -32,7 +32,7 @@ export function SubPendienteForm({ initial, onSubmit, onCancel }) {
         className="rich-text-field rich-text-field-sm"
         value={notes}
         onChange={setNotes}
-        placeholder="Nota (opcional, Cmd/Ctrl+B para negrilla)"
+        placeholder="Detalles del subpendiente"
         minHeight="56px"
       />
       {error && <p className="field-error">{error}</p>}

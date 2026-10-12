@@ -36,25 +36,64 @@ function NoteColorMenu({ x, y, onPick, onDelete, onClose }) {
   );
 }
 
-export function FloatingNote({ note, editing, onStartEdit, onCommit, onDelete, onMove, onToggleCollapse, onColorChange }) {
+// Tamaño mínimo al redimensionar desde la esquina — que nunca quede tan
+// chica que el texto o los botones (✕, la propia esquina) se encimen.
+const MIN_WIDTH = 140;
+const MIN_HEIGHT = 70;
+
+export function FloatingNote({ note, editing, onStartEdit, onCommit, onDelete, onMove, onToggleCollapse, onColorChange, onResize }) {
   const [draft, setDraft] = useState(note.text);
   const { pos, setPos, handleMouseDown: startDrag, didMove } = useDraggablePosition(
     { x: note.x, y: note.y },
     (x, y) => { if (typeof onMove === "function") onMove(note.id, x, y); },
   );
+  // null/null = todavía sin redimensionar a mano — usa el tamaño por
+  // defecto del CSS (ancho fijo, alto que crece solo con el texto). Una vez
+  // que se arrastra la esquina, queda un tamaño explícito en px, guardado
+  // (ver onResize) igual que ya se guarda la posición.
+  const [size, setSize] = useState({ width: note.width || null, height: note.height || null });
   const [menu, setMenu] = useState(null);
   const clickTimerRef = useRef(null);
+  const noteRef = useRef(null);
   const bg = note.color || NOTE_COLORS[0];
 
-  // Si la posición cambia desde afuera (otra pestaña, respaldo restaurado),
-  // el drag local se resincroniza con la fuente de verdad.
+  // Si la posición/tamaño cambian desde afuera (otra pestaña, respaldo
+  // restaurado), el estado local se resincroniza con la fuente de verdad.
   useEffect(() => { setPos({ x: note.x, y: note.y }); }, [note.x, note.y]);
+  useEffect(() => { setSize({ width: note.width || null, height: note.height || null }); }, [note.width, note.height]);
   useEffect(() => () => { if (clickTimerRef.current) clearTimeout(clickTimerRef.current); }, []);
 
   function handleMouseDown(e) {
     if (editing || e.button !== 0) return;
-    if (e.target.closest(".note-del")) return;
+    if (e.target.closest(".note-del") || e.target.closest(".note-resize-handle")) return;
     startDrag(e);
+  }
+
+  // Arrastrar la esquina inferior-derecha — mismo patrón de mousedown/
+  // mousemove/mouseup en window que el resto del arrastre manual de esta
+  // sesión (ver ItemDetailPopover/SubPendientesWeb): start/width/height
+  // viven en variables locales del cierre, no en el estado de React, para
+  // que onUp lea el valor FINAL exacto sin depender de un re-render previo.
+  function handleResizeMouseDown(e) {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const rect = noteRef.current.getBoundingClientRect();
+    const start = { x: e.clientX, y: e.clientY, origW: rect.width, origH: rect.height };
+    let width = start.origW;
+    let height = start.origH;
+    function onMove(ev) {
+      width = Math.max(MIN_WIDTH, Math.round(start.origW + (ev.clientX - start.x)));
+      height = Math.max(MIN_HEIGHT, Math.round(start.origH + (ev.clientY - start.y)));
+      setSize({ width, height });
+    }
+    function onUp() {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      if (typeof onResize === "function") onResize(note.id, width, height);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   }
 
   function handleClick() {
@@ -81,8 +120,9 @@ export function FloatingNote({ note, editing, onStartEdit, onCommit, onDelete, o
 
   return (
     <div
+      ref={noteRef}
       className={`floating-note ${editing ? "editing" : ""}`}
-      style={{ left: pos.x, top: pos.y, background: bg }}
+      style={{ left: pos.x, top: pos.y, background: bg, width: size.width || undefined, height: size.height || undefined }}
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
@@ -101,6 +141,7 @@ export function FloatingNote({ note, editing, onStartEdit, onCommit, onDelete, o
         <>
           {renderInlineMarkdown(note.text)}
           <button className="note-del" onClick={(e) => { e.stopPropagation(); onDelete(note.id); }} aria-label="Quitar nota">✕</button>
+          <div className="note-resize-handle" onMouseDown={handleResizeMouseDown} title="Arrastra para cambiar el tamaño" />
         </>
       )}
 

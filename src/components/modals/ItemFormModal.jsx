@@ -224,7 +224,7 @@ export function ItemFormModal({ formState, currentMonthKey, nextMonthKey, curren
             className="rich-text-field"
             value={notes}
             onChange={setNotes}
-            placeholder="Escribe aquí lo que quieras sobre este pendiente… (Cmd/Ctrl+B para negrilla)"
+            placeholder="Detalles del pendiente"
             minHeight="110px"
           />
         </div>

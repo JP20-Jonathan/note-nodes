@@ -25,13 +25,21 @@ const LEGEND_ITEMS = [
   { id: "en_curso", color: "var(--glow-active-green)", pulse: true, label: "En curso" },
 ];
 
-export function ColorLegend({ items, currentMonthKey, currentWeekStart, defaultPos }) {
+export function ColorLegend({ items, currentMonthKey, currentWeekStart, defaultPos, canvasBounds, hideWhenOutside }) {
   const userMovedRef = useRef(loadPos() !== null);
   const { pos, setPos, handleMouseDown } = useDraggablePosition(
     loadPos() || defaultPos || { x: 10, y: 10 },
     (x, y) => { userMovedRef.current = true; try { localStorage.setItem(POS_KEY, JSON.stringify({ x, y })); } catch (e) { /* sin persistencia esta vez */ } },
   );
   useEffect(() => { if (!userMovedRef.current && defaultPos) setPos(defaultPos); }, [defaultPos, setPos]);
+
+  // Mismo criterio que IndicatorsPanel: fuera del lienzo + pantalla
+  // completa = oculto, porque en pantalla completa ya no hay "fuera". Solo
+  // aplica si el usuario lo arrastró a mano — la posición por defecto sigue
+  // la esquina del lienzo incluso expandido (ver efecto de arriba), así que
+  // nunca cuenta como "afuera" aunque quede más allá del tamaño congelado.
+  const isOutsideCanvas = userMovedRef.current && canvasBounds && (pos.x >= canvasBounds.width || pos.y >= canvasBounds.height);
+  if (hideWhenOutside && isOutsideCanvas) return null;
 
   const activeItems = items.filter((i) => !i.done);
   function countFor(id) {

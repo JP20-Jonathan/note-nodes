@@ -102,6 +102,15 @@ function PendientesApp({ userId, userEmail }) {
   // (ver useDraggablePosition + localStorage dentro de cada uno).
   const [indicatorsDefaultPos, setIndicatorsDefaultPos] = useState(null);
   const [legendDefaultPos, setLegendDefaultPos] = useState(null);
+  // Tamaño del lienzo EN MODO NORMAL (relativo a treeAreaRef, mismo sistema
+  // de coordenadas que las posiciones de ambos paneles) — se lo pasamos
+  // para que cada uno sepa si lo arrastraron "al fondo sin usar" (fuera del
+  // lienzo). A propósito solo se actualiza fuera de pantalla completa: el
+  // lienzo expandido mide mucho más alto, y si tomáramos esa medida como
+  // referencia, una posición que estaba afuera en modo normal pasaría a
+  // leerse como "adentro" del lienzo gigante — justo el punto en el que el
+  // panel aparece encimado en medio de la vista en vez de quedar oculto.
+  const [canvasBounds, setCanvasBounds] = useState(null);
   useEffect(() => {
     const canvasEl = canvasRef.current;
     const areaEl = treeAreaRef.current;
@@ -111,12 +120,13 @@ function PendientesApp({ userId, userEmail }) {
       const areaRect = areaEl.getBoundingClientRect();
       setIndicatorsDefaultPos({ x: canvasRect.left - areaRect.left + 10, y: canvasRect.top - areaRect.top + 10 });
       setLegendDefaultPos({ x: canvasRect.right - areaRect.left - 230, y: canvasRect.bottom - areaRect.top - 120 });
+      if (!treeExpanded) setCanvasBounds({ width: canvasRect.width, height: canvasRect.height });
     }
     recompute();
     const ro = new ResizeObserver(recompute);
     ro.observe(canvasEl);
     return () => ro.disconnect();
-  }, [tab, loaded]);
+  }, [tab, loaded, treeExpanded]);
 
   const { year, month, day } = useMemo(() => todayInMedellin(), []);
   const currentMonthKey = useMemo(() => monthKey(year, month), [year, month]);
@@ -376,7 +386,10 @@ function PendientesApp({ userId, userEmail }) {
     const rect = treeAreaRef.current.getBoundingClientRect();
     const rawX = e.clientX - rect.left;
     const rawY = e.clientY - rect.top;
-    setCanvasMenu({ screenX: e.clientX, screenY: e.clientY, noteX: Math.round(Math.max(0, rawX - 66)), noteY: Math.round(Math.max(0, rawY - 29)) });
+    // -190 = mitad del ancho de .floating-note (380px), para que la nota
+    // nazca centrada en el punto donde se hizo clic derecho, no con su
+    // esquina ahí.
+    setCanvasMenu({ screenX: e.clientX, screenY: e.clientY, noteX: Math.round(Math.max(0, rawX - 190)), noteY: Math.round(Math.max(0, rawY - 29)) });
   }
   async function createNoteAt(x, y) {
     try {
@@ -386,15 +399,17 @@ function PendientesApp({ userId, userEmail }) {
       setSaveError(false);
     } catch (e) { setSaveError(true); }
   }
-  // Desde ClipboardComposer: a diferencia de createNoteAt, el texto ya viene
-  // terminado (el usuario lo escribió/revisó en el composer), así que la
-  // nota nace con su texto final — no entra en modo edición.
-  async function createNoteFromComposer(text) {
-    try {
-      const row = await db.insertNote(userId, { text, x: 80, y: 80 });
-      setNotes((prev) => [...prev, row]);
-      setSaveError(false);
-    } catch (e) { setSaveError(true); }
+  // Desde ClipboardComposer: la "Nota rápida" crea un pendiente directo (no
+  // una nota flotante) — el primer renglón que el usuario escribió es el
+  // nombre, el resto (con su negrilla/lista tal cual) es la nota opcional;
+  // categoría/tipificado/fecha límite los elige ahí mismo, en el composer.
+  async function createItemFromComposer({ name, notes, category, tipificado, deadline }) {
+    const anchors = anchorFor(tipificado, { currentMonthKey, nextMonthKey, currentWeekStart, nextWeekStart });
+    await addItem({
+      name, category, projectId: null, tipificado,
+      anchorMonth: anchors.anchorMonth, anchorWeek: anchors.anchorWeek,
+      deadline: deadline || null, notes,
+    });
   }
   async function commitNoteText(id, text) {
     const trimmed = text.trim();
@@ -432,6 +447,10 @@ function PendientesApp({ userId, userEmail }) {
   async function changeNoteColor(id, color) {
     setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, color } : n)));
     try { await db.updateNoteColor(id, color); setSaveError(false); } catch (e) { setSaveError(true); }
+  }
+  async function changeNoteSize(id, width, height) {
+    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, width, height } : n)));
+    try { await db.updateNoteSize(id, width, height); setSaveError(false); } catch (e) { setSaveError(true); }
   }
 
   const createProject = useCallback(async (categoryId, name) => {
@@ -579,13 +598,16 @@ function PendientesApp({ userId, userEmail }) {
             <IndicatorsPanel
               items={items} projects={projects} notes={notes}
               tipificadoFilter={tipificadoFilter} onToggleFilter={toggleTipificadoFilter}
-              defaultPos={indicatorsDefaultPos}
+              defaultPos={indicatorsDefaultPos} canvasBounds={canvasBounds} hideWhenOutside={treeExpanded}
             />
-            <ColorLegend items={items} currentMonthKey={currentMonthKey} currentWeekStart={currentWeekStart} defaultPos={legendDefaultPos} />
+            <ColorLegend
+              items={items} currentMonthKey={currentMonthKey} currentWeekStart={currentWeekStart}
+              defaultPos={legendDefaultPos} canvasBounds={canvasBounds} hideWhenOutside={treeExpanded}
+            />
             {notes.filter((n) => !n.collapsed).map((note) => (
               <FloatingNote key={note.id} note={note} editing={editingNoteId === note.id}
                 onStartEdit={startEditNote} onCommit={(text) => commitNoteText(note.id, text)} onDelete={deleteNote}
-                onMove={moveNote} onToggleCollapse={toggleNoteCollapsed} onColorChange={changeNoteColor} />
+                onMove={moveNote} onToggleCollapse={toggleNoteCollapsed} onColorChange={changeNoteColor} onResize={changeNoteSize} />
             ))}
 
             {/* Las colapsadas ya no usan su x/y libre — se apilan en un riel
@@ -700,7 +722,7 @@ function PendientesApp({ userId, userEmail }) {
         />
       )}
 
-      <ClipboardComposer onConvert={createNoteFromComposer} />
+      <ClipboardComposer onConvert={createItemFromComposer} />
     </div>
   );
 }
