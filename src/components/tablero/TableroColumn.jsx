@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { getCategory } from "../../data/categories.js";
 import { TIPIFICADO_ICON } from "../../data/tipificados.js";
-import { deadlineChipClass, projectNameFor } from "../../data/businessRules.js";
+import { deadlineChipClass, deadlineVerb, projectNameFor } from "../../data/businessRules.js";
 import { shortDateStr } from "../../data/dateUtils.js";
-import { COLUMN_DRAG_TYPE, sizeLabel } from "../../hooks/useColumnLayout.js";
+import { COLUMN_DRAG_TYPE } from "../../hooks/useColumnLayout.js";
 
 // Arrastrar: cualquier pendiente se puede soltar en otra columna para
 // reasignarlo a ese tipificado (onDropItem decide en App.jsx si es
@@ -12,17 +12,16 @@ import { COLUMN_DRAG_TYPE, sizeLabel } from "../../hooks/useColumnLayout.js";
 // sobre un compañero de columna. draggingId/dragOverId son puramente
 // visuales. El título (⠿) es un asa aparte para reordenar la COLUMNA
 // completa entre sus compañeras del mismo grupo (arrastrar-y-soltar sobre
-// otra cabecera), y el botón S/M/L cicla su tamaño — ambos se recuerdan
-// por navegador (useColumnLayout, en App.jsx/TableroView).
-export function TableroColumn({ tip, list, onDropItem, todayStr, projects, size, onMoveColumn, onCycleSize, onOpenDetail, dragGhost }) {
+// otra cabecera); expanded/onToggleExpand vienen de useColumnLayout, en
+// App.jsx/TableroView, para que se recuerden por navegador.
+export function TableroColumn({ tip, list, onDropItem, todayStr, projects, expanded, onToggleExpand, onMoveColumn, onOpenDetail, dragGhost }) {
   const capLabel = tip.cap != null ? `${list.length}/${tip.cap}` : `${list.length}`;
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
-  const [expanded, setExpanded] = useState(false);
   const [colDragOver, setColDragOver] = useState(false);
 
   return (
-    <div className={`tab-col size-${size} ${tip.id === "urgentes" || tip.id === "importantisimas" ? "special" : ""}`}>
+    <div className={`tab-col ${expanded ? "expanded-col" : ""} ${tip.id === "urgentes" || tip.id === "importantisimas" ? "special" : ""}`}>
       <div
         className={`tab-col-head ${colDragOver ? "drag-over" : ""}`}
         onDragOver={(e) => { if (e.dataTransfer.types.includes(COLUMN_DRAG_TYPE)) { e.preventDefault(); setColDragOver(true); } }}
@@ -44,8 +43,7 @@ export function TableroColumn({ tip, list, onDropItem, todayStr, projects, size,
         </h3>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span>{capLabel}</span>
-          <button type="button" className="tab-col-size-btn" title="Cambiar tamaño" onClick={onCycleSize}>{sizeLabel(size)}</button>
-          <button type="button" className="tab-col-expand-btn" title={expanded ? "Contraer" : "Expandir"} onClick={() => setExpanded((v) => !v)}>
+          <button type="button" className="tab-col-expand-btn" title={expanded ? "Contraer" : "Expandir"} onClick={onToggleExpand}>
             {expanded ? "⤡" : "⤢"}
           </button>
         </div>
@@ -109,7 +107,7 @@ export function TableroColumn({ tip, list, onDropItem, todayStr, projects, size,
                   <div className="tab-row-meta">
                     <span className="badge chip" style={{ borderColor: cat.color, color: cat.color }}>{cat.label}</span>
                     {proj && <span className="badge chip">{proj}</span>}
-                    {item.deadline && <span className={deadlineChipClass(item.deadline, todayStr)}>vence {shortDateStr(item.deadline)}</span>}
+                    {item.deadline && <span className={deadlineChipClass(item.deadline, todayStr)}>{deadlineVerb(item.deadline, todayStr)} {shortDateStr(item.deadline)}</span>}
                   </div>
                 </div>
                 <span className="drag-handle" aria-hidden="true">⠿</span>

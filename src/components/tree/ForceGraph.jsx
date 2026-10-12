@@ -59,13 +59,21 @@ function makeDragBehavior(simulation, dragStateRef) {
 }
 
 // Color/brillo de un item según el mismo agrupamiento que ya usa el
-// Tablero (tipificado), no la cercanía de la fecha límite — así el árbol y
-// el Tablero cuentan la misma historia con el mismo color de un vistazo.
+// Tablero (tipificado) — y también según la cercanía de la fecha límite
+// (dueThisWeek/dueNextWeek, ver businessRules.js/useArbolViewModel.js): si
+// un pendiente vence esta semana o la próxima, se pinta como tal aunque su
+// tipificado diga otra cosa, para que el árbol y el Tablero cuenten la
+// misma historia con el mismo color de un vistazo.
 // Atrasado titila en rojo (.node-pulse-red) porque nadie lo reasignó a
 // tiempo y necesita una acción manual; "urgentes" es una prioridad fijada
 // a mano, se ve igual de roja pero fija, para no confundir ambas señales.
-// esta_semana/siguientes_actividades titilan verde/amarillo para leerse
-// como "activo ahora" (ver .node-pulse-* en index.css).
+// esta_semana/en_curso titilan verde (el mismo verde para las dos — en_curso
+// es, si acaso, más urgente que esta_semana por estar siendo trabajado
+// ahora mismo, no tiene sentido que se vea "menos") para leerse como "activo
+// ahora" (ver .node-pulse-* en index.css). Importantísimas usa --accent
+// (el mismo naranja que ya pinta la categoría Diseño y el borde de su
+// columna en el Tablero) en vez de rojo, para no confundirla con
+// urgentes/atrasados (esos sí se quedan en rojo, atrasado titilando).
 function itemGlowStyle(meta) {
   if (!meta) return null;
   if (meta.overdue) {
@@ -75,12 +83,23 @@ function itemGlowStyle(meta) {
     return { stroke: "var(--glow-urgent-red)", strokeWidth: 3, filter: "drop-shadow(0 0 7px var(--glow-urgent-red))", pulseClass: null };
   }
   if (meta.tipificado === "importantisimas") {
-    return { stroke: "var(--sema-red)", strokeWidth: 2, filter: "drop-shadow(0 0 4px var(--sema-red))", pulseClass: null };
+    return { stroke: "var(--accent)", strokeWidth: 2, filter: "drop-shadow(0 0 4px var(--accent))", pulseClass: null };
   }
-  if (meta.tipificado === "esta_semana") {
+  // dueThisWeek/dueNextWeek: un pendiente con fecha límite dentro de esta
+  // semana o la próxima se pinta como tal aunque su tipificado sea otro
+  // (ej. "sin tipificar" con vencimiento esta semana) — tiene sentido
+  // resaltarlo igual, y así el checkbox "Resaltar en el Árbol" de
+  // esta_semana/próxima_semana también lo atrapa (ver tipificadoFilter).
+  if (meta.tipificado === "esta_semana" || meta.dueThisWeek) {
     return { stroke: "var(--glow-active-green)", strokeWidth: 2, filter: null, pulseClass: "node-pulse-green" };
   }
-  if (meta.tipificado === "siguientes_actividades") {
+  if (meta.tipificado === "en_curso") {
+    // Verde igual que esta_semana (no amarillo): en_curso está directamente
+    // relacionado con esta semana y, si acaso, es todavía más prioritario
+    // por estar siendo trabajado ahora mismo — corrección pedida a mano.
+    return { stroke: "var(--glow-active-green)", strokeWidth: 2, filter: null, pulseClass: "node-pulse-green" };
+  }
+  if (meta.tipificado === "proxima_semana" || meta.dueNextWeek) {
     return { stroke: "var(--sema-yellow)", strokeWidth: 2, filter: null, pulseClass: "node-pulse-yellow" };
   }
   return null;
@@ -94,25 +113,30 @@ const FOCUS_GROWTH = 1.25;
 // no invadan el clúster de una rama vecina también abierta.
 const FULL_BRANCH_COLLISION_PADDING = 90;
 
-// Los nodos enfocados (clic en categoría/proyecto — se puede tener varios a
-// la vez, ver handleNodeClick) y toda su rama — ancestros hasta el sol, y
-// descendientes hasta los items — quedan "en foco"; el resto se atenúa.
-// null = sin foco, todo visible por igual. Con varias ramas abiertas, el
-// resultado es la UNIÓN de cada una (así se puede comparar BMW y CESDE a la
-// vez sin que una tape a la otra).
-function computeFocusSet(nodes, focusedNodeIds) {
-  if (!focusedNodeIds || focusedNodeIds.size === 0) return null;
+// Cierre genérico sobre un set de "semillas": cada semilla se expande hacia
+// sus ancestros (hasta el sol) y hacia sus descendientes — el resultado es
+// "esta rama completa, de punta a punta". Se usa para dos cosas distintas
+// que necesitan la misma forma de "iluminar una rama":
+// 1) el foco por clic en categoría/proyecto (focusedNodeIds más abajo —
+//    varias ramas abiertas a la vez dan la UNIÓN de cada una, así se puede
+//    comparar BMW y CESDE sin que una tape a la otra).
+// 2) el filtro por tipificado del panel de indicadores (semillas = los
+//    ítems que matchean; el cierre hacia arriba ilumina su categoría/
+//    proyecto sin arrastrar a sus hermanos que no matchean).
+// null = sin semillas, todo visible por igual.
+function closureOverSeeds(nodes, seedIds) {
+  if (!seedIds || seedIds.size === 0) return null;
   const byNodeId = {};
   nodes.forEach((n) => { byNodeId[n.id] = n; });
   const related = new Set();
-  focusedNodeIds.forEach((focusedNodeId) => {
-    let ancestor = byNodeId[focusedNodeId];
+  seedIds.forEach((seedId) => {
+    let ancestor = byNodeId[seedId];
     while (ancestor) { related.add(ancestor.id); ancestor = ancestor.parentId ? byNodeId[ancestor.parentId] : null; }
   });
   nodes.forEach((n) => {
     let p = n;
     while (p) {
-      if (focusedNodeIds.has(p.id)) { related.add(n.id); break; }
+      if (seedIds.has(p.id)) { related.add(n.id); break; }
       p = p.parentId ? byNodeId[p.parentId] : null;
     }
   });
@@ -205,6 +229,7 @@ function sunGlowFilter(hex) {
 // más aire que una rama corta, para que las categorías no amontonen sus
 // propios proyectos unas sobre otras.
 function linkDistance(targetType) {
+  if (targetType === "subpendiente") return 20;
   if (targetType === "item") return 42;
   if (targetType === "project") return 64;
   return 130;
@@ -220,7 +245,7 @@ const LINK_TIER_STYLE = {
   leaf: { core: 1.5, glow: 4, coreColor: "#7FC2F0", midColor: null, glowColor: "#0B3B80", useFilter: false, flowDur: "1.1s" },
 };
 function linkTier(targetType) {
-  if (targetType === "item") return "leaf";
+  if (targetType === "item" || targetType === "subpendiente") return "leaf";
   if (targetType === "project") return "branch";
   return "trunk";
 }
@@ -232,10 +257,14 @@ function linkGradientId(index) {
 // estimado por longitud de texto para que el label completo (sin truncar)
 // quepa en varias líneas sin desbordar el panel HTML.
 const ITEM_CARD_WIDTH = 130;
-function estimateItemCardHeight(label) {
+// subCount: la tarjeta crece un renglón chico por cada subpendiente que se
+// lista adentro (ver el render de la tarjeta completa, más abajo) — tope de
+// 5 renglones contados así no sea un pendiente con 20 subpendientes el que
+// termine empujando el layout entero de su rama.
+function estimateItemCardHeight(label, subCount = 0) {
   const charsPerLine = 19;
   const lines = Math.min(6, Math.max(1, Math.ceil((label || "").length / charsPerLine)));
-  return 20 + lines * 13;
+  return 20 + lines * 13 + Math.min(5, subCount) * 11;
 }
 
 // Nivel de detalle de un ítem — no hay que ver todo el árbol a la vez.
@@ -244,7 +273,11 @@ function estimateItemCardHeight(label) {
 // todo el texto cuando el usuario "entra" a esa rama (foco por clic) o
 // hace zoom manual sobre esa zona — igual que pedía la referencia.
 const ITEM_ZOOM_THRESHOLD = 1.7;
-function itemDetailLevel(node, focusedNodeIds, focusSet, zoomScale) {
+function itemDetailLevel(node, focusedNodeIds, focusSet, filterSet, zoomScale) {
+  // Un filtro de tipificado activo manda primero: si este ítem no matchea,
+  // se queda compacto aunque esté dentro de una rama enfocada o con zoom —
+  // el filtro es "quiero ver SOLO esto", no solo un degradado de opacidad.
+  if (filterSet && !filterSet.has(node.id)) return "compact";
   if (focusedNodeIds && focusedNodeIds.size > 0) return focusSet && focusSet.has(node.id) ? "full" : "compact";
   return zoomScale >= ITEM_ZOOM_THRESHOLD ? "full" : "compact";
 }
@@ -259,15 +292,15 @@ function itemDetailLevel(node, focusedNodeIds, focusSet, zoomScale) {
 //
 // Nota: se probó una variante en espiral (tarjetas "orbitando" al nodo en
 // vez de en fila) y se revirtió a pedido explícito — la fila ordenada se
-// lee mejor para comparar actividades por categoría de un vistazo.
+// lee mejor para comparar pendientes por categoría de un vistazo.
 const ITEM_LIST_GAP = 8;
 const ITEM_NODE_GAP = 28;
-function layoutItemGroup(parent, items, grandparent, parentRadius) {
+function layoutItemGroup(parent, items, grandparent, parentRadius, subCountByItemId) {
   const dx = grandparent ? parent.x - grandparent.x : 1;
   const dy = grandparent ? parent.y - grandparent.y : 0;
   const horizontal = Math.abs(dx) >= Math.abs(dy);
   const sign = horizontal ? (dx >= 0 ? 1 : -1) : (dy >= 0 ? 1 : -1);
-  const heights = items.map((n) => estimateItemCardHeight(n.label));
+  const heights = items.map((n) => estimateItemCardHeight(n.label, subCountByItemId[n.id] || 0));
   const positions = {};
   if (horizontal) {
     const totalHeight = heights.reduce((a, b) => a + b, 0) + ITEM_LIST_GAP * (items.length - 1);
@@ -299,7 +332,7 @@ function layoutItemGroup(parent, items, grandparent, parentRadius) {
   return positions;
 }
 
-export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick }) {
+export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick, onNodeContextMenu, tipificadoFilter }) {
   const wrapRef = useRef(null);
   const svgRef = useRef(null);
   const simNodesRef = useRef([]);
@@ -344,7 +377,18 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick 
   const { width, height } = size;
 
   useEffect(() => {
-    const simNodes = nodes.map((n) => ({ ...n }));
+    // Mergeamos por id contra la simulación anterior para que un alta/edición
+    // (que siempre trae un array `nodes` nuevo desde useArbolViewModel) no
+    // "teletransporte" los nodos que ya existían: solo un nodo realmente
+    // nuevo entra frío con la posición inicial por defecto de D3. Los ids
+    // (sun / category:x / project:x / item:x) son estables entre renders,
+    // incluso al cambiar de mes o semana, así que el merge es seguro.
+    const prevById = {};
+    simNodesRef.current.forEach((n) => { prevById[n.id] = n; });
+    const simNodes = nodes.map((n) => {
+      const prev = prevById[n.id];
+      return prev ? { ...n, x: prev.x, y: prev.y, vx: prev.vx, vy: prev.vy, fx: prev.fx, fy: prev.fy } : { ...n };
+    });
     const simLinks = links.map((l) => ({ ...l }));
     simNodesRef.current = simNodes;
     simLinksRef.current = simLinks;
@@ -437,7 +481,33 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick 
   // parentId es estable entre ticks (viene tal cual del hook), así que el
   // set de foco se puede calcular sobre "nodes" (los originales) en vez de
   // recalcularlo por cada tick de la simulación.
-  const focusSet = useMemo(() => computeFocusSet(nodes, focusedNodeIds), [nodes, focusedNodeIds]);
+  const focusSet = useMemo(() => closureOverSeeds(nodes, focusedNodeIds), [nodes, focusedNodeIds]);
+  // Mismo cierre, pero con semillas = los ítems que matchean el filtro de
+  // tipificado del panel de indicadores (checkboxes esta_semana/próxima
+  // semana/este_mes/próximo_mes). focusSet y filterSet se combinan por
+  // INTERSECCIÓN (ver isVisible más abajo): si tengo una rama enfocada Y un
+  // filtro activo a la vez, veo solo lo que cumple ambos — no la unión, que
+  // mostraría ramas sin relación solo porque tienen algo del tipificado
+  // filtrado en otro lado del árbol.
+  const filterSet = useMemo(() => {
+    if (!tipificadoFilter || tipificadoFilter.size === 0) return null;
+    // "esta_semana"/"próxima semana" marcados también atrapan items cuya
+    // fecha límite cae esa semana, no solo los que tienen ese tipificado
+    // literal (mismo criterio que itemGlowStyle — ver su comentario).
+    const matches = (n) => {
+      const meta = n.meta;
+      if (!meta) return false;
+      if (tipificadoFilter.has(meta.tipificado)) return true;
+      if (tipificadoFilter.has("esta_semana") && meta.dueThisWeek) return true;
+      if (tipificadoFilter.has("proxima_semana") && meta.dueNextWeek) return true;
+      return false;
+    };
+    const seedIds = new Set(nodes.filter((n) => n.type === "item" && matches(n)).map((n) => n.id));
+    return closureOverSeeds(nodes, seedIds);
+  }, [nodes, tipificadoFilter]);
+  function isVisible(id) {
+    return (!focusSet || focusSet.has(id)) && (!filterSet || filterSet.has(id));
+  }
   // Posición del nodo padre de cada ítem, para anclar su tarjeta flotante
   // del lado por donde entra el "hilo" — puramente de layout visual.
   const simById = {};
@@ -484,7 +554,31 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick 
     if (typeof onNodeDoubleClick === "function") onNodeDoubleClick(original);
   }
 
-  const gemNodes = simNodes.filter((n) => n.type !== "item" && n.x != null);
+  // Clic derecho en categoría/proyecto: borradores de "nuevo pendiente" sin
+  // terminar para ese nodo (ver App.jsx/itemDrafts.js). preventDefault+
+  // stopPropagation para que ni el menú nativo del navegador ni el "+ Nueva
+  // nota aquí" del lienzo (App.jsx, un nivel más arriba) se disparen a la vez.
+  function handleNodeContextMenu(e, node) {
+    const original = resolveOriginal(node);
+    if (original.type !== "category" && original.type !== "project") return;
+    if (typeof onNodeContextMenu !== "function") return;
+    e.preventDefault();
+    e.stopPropagation();
+    onNodeContextMenu(original, e.clientX, e.clientY);
+  }
+
+  const gemNodes = simNodes.filter((n) => n.type !== "item" && n.type !== "subpendiente" && n.x != null);
+
+  // Subpendientes agrupados por el id de su item padre — un nodo "hoja de
+  // hoja", sin tarjeta propia: en vista compacta son puntitos satélite del
+  // punto de su item (ver el render de abajo), y cuando el item pasa a
+  // tarjeta completa, sus nombres se leen adentro de esa misma tarjeta en
+  // vez de quedar como puntos sueltos sin una posición de layout coherente.
+  const subNodesByItemId = {};
+  simNodes.forEach((n) => {
+    if (n.type !== "subpendiente" || n.x == null) return;
+    (subNodesByItemId[n.parentId] = subNodesByItemId[n.parentId] || []).push(n);
+  });
 
   // Posición "de lectura" de cada ítem en detalle completo — no la que
   // calculó la física (esa solo evita que los anclas se toquen), sino un
@@ -496,15 +590,17 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick 
     const fullItemsByParent = {};
     simNodes.forEach((n) => {
       if (n.type !== "item" || n.x == null) return;
-      if (itemDetailLevel(n, focusedNodeIds, focusSet, tf.k) !== "full") return;
+      if (itemDetailLevel(n, focusedNodeIds, focusSet, filterSet, tf.k) !== "full") return;
       (fullItemsByParent[n.parentId] = fullItemsByParent[n.parentId] || []).push(n);
     });
+    const subCountByItemId = {};
+    Object.keys(subNodesByItemId).forEach((itemId) => { subCountByItemId[itemId] = subNodesByItemId[itemId].length; });
     Object.keys(fullItemsByParent).forEach((parentId) => {
       const parent = simById[parentId];
       if (!parent || parent.x == null) return;
       const grandparent = parent.parentId ? simById[parent.parentId] : null;
       const parentRadius = focusedNodeIds.has(parent.id) ? parent.radius * FOCUS_GROWTH : parent.radius;
-      Object.assign(itemLayout, layoutItemGroup(parent, fullItemsByParent[parentId], grandparent, parentRadius));
+      Object.assign(itemLayout, layoutItemGroup(parent, fullItemsByParent[parentId], grandparent, parentRadius, subCountByItemId));
     });
   }
 
@@ -550,7 +646,12 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick 
         {simLinks.map((l, i) => {
           const s = l.source, t = l.target;
           if (!s || !t || s.x == null || t.x == null) return null;
-          const inFocus = !focusSet || (focusSet.has(s.id) && focusSet.has(t.id));
+          // Un subpendiente no tiene tarjeta propia — cuando su item padre
+          // está en detalle "full" sus nombres se leen DENTRO de esa tarjeta
+          // (ver el render de items más abajo), así que acá no se dibuja un
+          // hilo suelto apuntando a un punto que ya no se pinta.
+          if (t.type === "subpendiente" && itemLayout[t.parentId]) return null;
+          const inFocus = isVisible(s.id) && isVisible(t.id);
           const tier = LINK_TIER_STYLE[linkTier(t.type)];
           // Si el ítem destino está reubicado por el layout de lectura
           // (detalle "full"), el hilo debe entrar por el borde real de su
@@ -595,7 +696,7 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick 
       </g>
       <g>
         {gemNodes.map((n) => {
-          const inFocus = !focusSet || focusSet.has(n.id);
+          const inFocus = isVisible(n.id);
           const isTouched = focusedNodeIds.has(n.id);
           const isHovered = n.id === hoveredNodeId;
           const isSun = n.type === "sun";
@@ -629,6 +730,7 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick 
               }}
               onClick={() => handleNodeClick(n)}
               onDoubleClick={() => handleNodeDoubleClick(n)}
+              onContextMenu={(e) => handleNodeContextMenu(e, n)}
               onMouseEnter={() => setHoveredNodeId(n.id)}
               onMouseLeave={() => setHoveredNodeId((h) => (h === n.id ? null : h))}
             >
@@ -660,7 +762,7 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick 
       <g pointerEvents="none">
         {gemNodes.map((n) => {
           const style = LABEL_STYLE_BY_TYPE[n.type] || LABEL_STYLE_BY_TYPE.category;
-          const inFocus = !focusSet || focusSet.has(n.id);
+          const inFocus = isVisible(n.id);
           const effectiveRadius = focusedNodeIds.has(n.id) ? n.radius * FOCUS_GROWTH : n.radius;
           return (
             <text
@@ -683,9 +785,9 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick 
       </g>
       <g>
         {simNodes.filter((n) => n.type === "item" && n.x != null).map((n) => {
-          const inFocus = !focusSet || focusSet.has(n.id);
+          const inFocus = isVisible(n.id);
           const glow = itemGlowStyle(n.meta);
-          const detail = itemDetailLevel(n, focusedNodeIds, focusSet, tf.k);
+          const detail = itemDetailLevel(n, focusedNodeIds, focusSet, filterSet, tf.k);
 
           // Vista general: un punto pequeño con el color de su categoría —
           // barato de pintar (sin foreignObject ni blur) y legible sin
@@ -717,12 +819,13 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick 
 
           // Rama enfocada o zoom manual: tarjeta completa con el texto
           // entero (glassmorphism), pedida explícitamente para "entrar" a
-          // un nodo y leer sus actividades sin que se corte el label. La
+          // un nodo y leer sus pendientes sin que se corte el label. La
           // posición viene del layout explícito por padre (itemLayout),
           // no de la física — así nunca queda una tarjeta sobre otra.
+          const subNodes = subNodesByItemId[n.id] || [];
           const layout = itemLayout[n.id];
           const cardW = layout ? layout.w : ITEM_CARD_WIDTH;
-          const cardH = layout ? layout.h : estimateItemCardHeight(n.label);
+          const cardH = layout ? layout.h : estimateItemCardHeight(n.label, subNodes.length);
           const cx = layout ? layout.cx : n.x;
           const cy = layout ? layout.cy : n.y;
           const borderColor = glow ? glow.stroke : mixHex(n.color, "#BFE3FF", 0.5);
@@ -760,12 +863,45 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick 
                   overflowWrap: "break-word",
                   wordBreak: "break-word",
                   display: "flex",
-                  alignItems: "center",
+                  flexDirection: "column",
+                  justifyContent: "center",
                 }}
               >
-                {n.label}
+                <div>{n.label}</div>
+                {subNodes.length > 0 && (
+                  // Un subpendiente no tiene tarjeta propia en el grafo (ver
+                  // el bloque de puntitos satélite, más abajo, que se apaga
+                  // justo cuando el item pasa a este modo) — acá se listan
+                  // por nombre, adentro de la tarjeta de su padre.
+                  <ul style={{ margin: "4px 0 0", padding: 0, paddingLeft: 12, listStyle: "disc", fontSize: 8, lineHeight: "11px", opacity: 0.8 }}>
+                    {subNodes.map((s) => <li key={s.id}>{s.label}</li>)}
+                  </ul>
+                )}
               </div>
             </foreignObject>
+          );
+        })}
+      </g>
+      <g>
+        {simNodes.filter((n) => n.type === "subpendiente" && n.x != null).map((n) => {
+          // Sin tarjeta propia: si su item padre ya pasó a detalle "full",
+          // su nombre se lee adentro de esa tarjeta (ver arriba) — acá solo
+          // se pinta el puntito satélite para la vista compacta del item.
+          if (itemLayout[n.parentId]) return null;
+          const inFocus = isVisible(n.id);
+          return (
+            <circle
+              key={n.id}
+              ref={(el) => { if (el && dragBehaviorRef.current) d3.select(el).datum(n).call(dragBehaviorRef.current); }}
+              cx={n.x} cy={n.y} r={3}
+              fill={n.color}
+              stroke="rgba(220,235,250,0.5)"
+              strokeWidth={0.75}
+              style={{ cursor: "grab", opacity: inFocus ? 1 : 0.18, transition: "opacity 220ms ease" }}
+              onClick={() => handleNodeClick(n)}
+            >
+              <title>{n.label}</title>
+            </circle>
           );
         })}
       </g>

@@ -6,10 +6,6 @@ import { useCallback, useState } from "react";
 // gestos fue.
 export const COLUMN_DRAG_TYPE = "application/x-tabcol";
 
-const SIZES = ["medium", "large"];
-const SIZE_LABEL = { medium: "M", large: "L" };
-export function sizeLabel(size) { return SIZE_LABEL[size] || "M"; }
-
 function loadOrder(key, ids) {
   try {
     const saved = JSON.parse(localStorage.getItem(`pnd-order-${key}`) || "null");
@@ -23,22 +19,24 @@ function loadOrder(key, ids) {
   return ids;
 }
 
-function loadSizes(key) {
+function loadExpanded(key) {
   try {
-    return JSON.parse(localStorage.getItem(`pnd-size-${key}`) || "{}");
+    const saved = JSON.parse(localStorage.getItem(`pnd-expanded-${key}`) || "[]");
+    return Array.isArray(saved) ? new Set(saved) : new Set();
   } catch (e) {
-    return {};
+    return new Set();
   }
 }
 
 // Recuerda, por navegador, en qué orden puso el usuario las columnas de un
-// tablero y qué tamaño eligió para cada una — sobrevive a recargar la
-// página. No es un layout libre en píxeles (eso sería mucho más trabajo,
-// con una librería de grillas arrastrables); aquí solo se reordena entre
-// columnas del mismo grupo y se elige entre 3 tamaños fijos.
+// tablero y cuáles dejó expandidas — sobrevive a recargar la página Y a
+// cambiar de pestaña/vista (antes "expandir" era estado local del
+// componente, así que se perdía apenas la columna se desmontaba; ahora vive
+// acá, igual que el orden, para que se comporte como las notas/indicadores/
+// colores: queda como el usuario lo dejó).
 export function useColumnLayout(storageKey, ids) {
   const [order, setOrder] = useState(() => loadOrder(storageKey, ids));
-  const [sizes, setSizes] = useState(() => loadSizes(storageKey));
+  const [expanded, setExpanded] = useState(() => loadExpanded(storageKey));
 
   const moveColumn = useCallback((draggedId, targetId) => {
     if (draggedId === targetId) return;
@@ -53,17 +51,17 @@ export function useColumnLayout(storageKey, ids) {
     });
   }, [storageKey]);
 
-  const cycleSize = useCallback((id) => {
-    setSizes((prev) => {
-      const current = prev[id] || "medium";
-      const next = SIZES[(SIZES.indexOf(current) + 1) % SIZES.length];
-      const updated = { ...prev, [id]: next };
-      try { localStorage.setItem(`pnd-size-${storageKey}`, JSON.stringify(updated)); } catch (e) { /* sin persistencia esta vez */ }
-      return updated;
+  const toggleExpanded = useCallback((id) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try { localStorage.setItem(`pnd-expanded-${storageKey}`, JSON.stringify([...next])); } catch (e) { /* sin persistencia esta vez */ }
+      return next;
     });
   }, [storageKey]);
 
-  const sizeOf = useCallback((id) => (SIZES.includes(sizes[id]) ? sizes[id] : "medium"), [sizes]);
+  const isExpanded = useCallback((id) => expanded.has(id), [expanded]);
 
-  return { order, moveColumn, sizeOf, cycleSize };
+  return { order, moveColumn, isExpanded, toggleExpanded };
 }

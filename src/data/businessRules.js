@@ -24,6 +24,16 @@ export function projectNameFor(projects, item) {
   return p ? p.name : null;
 }
 
+// Si un deadline cae dentro de una semana dada (lunes a domingo, 7 días
+// desde weekStart) — se usa para que el glow/resaltado de "esta semana" o
+// "próxima semana" en el Árbol también atrape pendientes que tienen esa
+// fecha límite aunque su tipificado sea otro (ej. "importantísimas" con
+// vencimiento esta semana), no solo los que están tipificados así.
+export function isDueInWeek(deadline, weekStart) {
+  if (!deadline || !weekStart) return false;
+  return deadline >= weekStart && deadline <= addDaysToDateStr(weekStart, 6);
+}
+
 // Un pendiente está atrasado cuando el período al que está anclado
 // (anchorMonth para los tipificados de mes, anchorWeek para los de semana)
 // ya quedó en el pasado. Aplica igual a "este mes"/"esta semana" que a
@@ -43,7 +53,7 @@ export function isOverdue(item, currentMonthKey, currentWeekStart) {
 export function anchorFor(tipificadoId, { currentMonthKey, nextMonthKey, currentWeekStart, nextWeekStart }) {
   if (tipificadoId === "este_mes") return { anchorMonth: currentMonthKey, anchorWeek: null };
   if (tipificadoId === "proximo_mes") return { anchorMonth: nextMonthKey, anchorWeek: null };
-  if (tipificadoId === "esta_semana" || tipificadoId === "siguientes_actividades") return { anchorMonth: null, anchorWeek: currentWeekStart };
+  if (tipificadoId === "esta_semana" || tipificadoId === "en_curso") return { anchorMonth: null, anchorWeek: currentWeekStart };
   if (tipificadoId === "proxima_semana") return { anchorMonth: null, anchorWeek: nextWeekStart };
   return { anchorMonth: null, anchorWeek: null };
 }
@@ -59,6 +69,12 @@ export function countActiveForCap(items, { category, projectId, tipificado, anch
     if (anchorWeek && i.anchorWeek !== anchorWeek) return false;
     return true;
   }).length;
+}
+
+// "venció" si la fecha ya pasó, "vence" si es hoy o todavía no llega —
+// decir "vence 26 sep" de algo que pasó hace rato no es lógico.
+export function deadlineVerb(deadline, todayStr) {
+  return deadline < todayStr ? "venció" : "vence";
 }
 
 export function deadlineChipClass(deadline, todayStr) {
