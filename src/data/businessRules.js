@@ -24,6 +24,26 @@ export function projectNameFor(projects, item) {
   return p ? p.name : null;
 }
 
+// Para la Nota Rápida: esa categoría no pregunta el proyecto, así que lo
+// buscamos escrito dentro del cuerpo de la nota (sin importar mayúsculas o
+// minúsculas). Si el texto menciona varios proyectos, gana el que aparece
+// primero (el índice más bajo en el texto), no el primero de la lista.
+export function findProjectIdInText(text, categoryProjects) {
+  if (!text || !categoryProjects?.length) return null;
+  const haystack = text.toLowerCase();
+  let bestIndex = -1;
+  let bestId = null;
+  for (const project of categoryProjects) {
+    if (!project.name) continue;
+    const idx = haystack.indexOf(project.name.toLowerCase());
+    if (idx !== -1 && (bestIndex === -1 || idx < bestIndex)) {
+      bestIndex = idx;
+      bestId = project.id;
+    }
+  }
+  return bestId;
+}
+
 // Si un deadline cae dentro de una semana dada (lunes a domingo, 7 días
 // desde weekStart) — se usa para que el glow/resaltado de "esta semana" o
 // "próxima semana" en el Árbol también atrape pendientes que tienen esa
