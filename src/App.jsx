@@ -3,9 +3,9 @@ import { supabase } from "./lib/supabaseClient.js";
 import * as db from "./lib/db.js";
 import { AuthScreen } from "./components/auth/AuthScreen.jsx";
 import { monthKey, addMonthKey, mondayOf, addDaysToDateStr, todayInMedellin, pad2 } from "./data/dateUtils.js";
-import { anchorFor, countActiveForCap } from "./data/businessRules.js";
+import { anchorFor, countActiveForCap, findProjectIdInText } from "./data/businessRules.js";
 import { getTipificado } from "./data/tipificados.js";
-import { DEFAULT_CESDE_AREAS, CATEGORIES } from "./data/categories.js";
+import { DEFAULT_CESDE_AREAS, CATEGORIES, PROJECT_FIELD_BY_CATEGORY } from "./data/categories.js";
 import { loadColorOverrides, saveColorOverrides } from "./data/colorOverrides.js";
 import { useArbolViewModel } from "./hooks/useArbolViewModel.js";
 import { useDragGhost } from "./hooks/useDragGhost.js";
@@ -403,10 +403,15 @@ function PendientesApp({ userId, userEmail }) {
   // una nota flotante) — el primer renglón que el usuario escribió es el
   // nombre, el resto (con su negrilla/lista tal cual) es la nota opcional;
   // categoría/tipificado/fecha límite los elige ahí mismo, en el composer.
+  // El composer no pregunta por proyecto/área, así que si la categoría lo
+  // necesita lo buscamos mencionado dentro del cuerpo de la nota.
   async function createItemFromComposer({ name, notes, category, tipificado, deadline }) {
     const anchors = anchorFor(tipificado, { currentMonthKey, nextMonthKey, currentWeekStart, nextWeekStart });
+    const projectField = PROJECT_FIELD_BY_CATEGORY[category];
+    const categoryProjects = projectField ? (projects[projectField.sourceCategory] || []) : [];
+    const projectId = findProjectIdInText(notes, categoryProjects);
     await addItem({
-      name, category, projectId: null, tipificado,
+      name, category, projectId, tipificado,
       anchorMonth: anchors.anchorMonth, anchorWeek: anchors.anchorWeek,
       deadline: deadline || null, notes,
     });
