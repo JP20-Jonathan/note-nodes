@@ -257,14 +257,21 @@ function linkGradientId(index) {
 // estimado por longitud de texto para que el label completo (sin truncar)
 // quepa en varias líneas sin desbordar el panel HTML.
 const ITEM_CARD_WIDTH = 130;
-// subCount: la tarjeta crece un renglón chico por cada subpendiente que se
-// lista adentro (ver el render de la tarjeta completa, más abajo) — tope de
-// 5 renglones contados así no sea un pendiente con 20 subpendientes el que
-// termine empujando el layout entero de su rama.
-function estimateItemCardHeight(label, subCount = 0) {
+function estimateItemCardHeight(label) {
   const charsPerLine = 19;
   const lines = Math.min(6, Math.max(1, Math.ceil((label || "").length / charsPerLine)));
-  return 20 + lines * 13 + Math.min(5, subCount) * 11;
+  return 20 + lines * 13;
+}
+
+// Tarjetitas de subpendiente alrededor de un ítem en detalle "full" — más
+// chicas y sin resplandor, para que el pendiente siga teniendo más
+// protagonismo que sus subpendientes (ver subChipPosition más abajo).
+const SUB_CHIP_WIDTH = 72;
+const SUB_CHIP_GAP = 10;
+function estimateSubChipHeight(label) {
+  const charsPerLine = 14;
+  const lines = Math.min(4, Math.max(1, Math.ceil((label || "").length / charsPerLine)));
+  return 14 + lines * 11;
 }
 
 // Nivel de detalle de un ítem — no hay que ver todo el árbol a la vez.
@@ -295,12 +302,12 @@ function itemDetailLevel(node, focusedNodeIds, focusSet, filterSet, zoomScale) {
 // lee mejor para comparar pendientes por categoría de un vistazo.
 const ITEM_LIST_GAP = 8;
 const ITEM_NODE_GAP = 28;
-function layoutItemGroup(parent, items, grandparent, parentRadius, subCountByItemId) {
+function layoutItemGroup(parent, items, grandparent, parentRadius) {
   const dx = grandparent ? parent.x - grandparent.x : 1;
   const dy = grandparent ? parent.y - grandparent.y : 0;
   const horizontal = Math.abs(dx) >= Math.abs(dy);
   const sign = horizontal ? (dx >= 0 ? 1 : -1) : (dy >= 0 ? 1 : -1);
-  const heights = items.map((n) => estimateItemCardHeight(n.label, subCountByItemId[n.id] || 0));
+  const heights = items.map((n) => estimateItemCardHeight(n.label));
   const positions = {};
   if (horizontal) {
     const totalHeight = heights.reduce((a, b) => a + b, 0) + ITEM_LIST_GAP * (items.length - 1);
@@ -500,6 +507,9 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick,
       if (tipificadoFilter.has(meta.tipificado)) return true;
       if (tipificadoFilter.has("esta_semana") && meta.dueThisWeek) return true;
       if (tipificadoFilter.has("proxima_semana") && meta.dueNextWeek) return true;
+      // "atrasado" no es un tipificado real (ver ColorLegend.jsx) — es el
+      // mismo meta.overdue que ya pinta el glow rojo del nodo.
+      if (tipificadoFilter.has("atrasado") && meta.overdue) return true;
       return false;
     };
     const seedIds = new Set(nodes.filter((n) => n.type === "item" && matches(n)).map((n) => n.id));
@@ -570,10 +580,12 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick,
   const gemNodes = simNodes.filter((n) => n.type !== "item" && n.type !== "subpendiente" && n.x != null);
 
   // Subpendientes agrupados por el id de su item padre — un nodo "hoja de
-  // hoja", sin tarjeta propia: en vista compacta son puntitos satélite del
-  // punto de su item (ver el render de abajo), y cuando el item pasa a
-  // tarjeta completa, sus nombres se leen adentro de esa misma tarjeta en
-  // vez de quedar como puntos sueltos sin una posición de layout coherente.
+  // hoja", sin tarjeta propia en el sentido de layout explícito: su posición
+  // sigue siendo la que ya calculó la física (forceLink con linkDistance 20,
+  // igual que cualquier otro nodo atado a un padre) tanto en vista compacta
+  // como en detalle completo — ver subChipPos más abajo, que solo REPROYECTA
+  // esa posición física (su ángulo relativo al ítem) sobre donde el ítem
+  // termine dibujado, sin inventar un layout nuevo.
   const subNodesByItemId = {};
   simNodes.forEach((n) => {
     if (n.type !== "subpendiente" || n.x == null) return;
@@ -593,16 +605,38 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick,
       if (itemDetailLevel(n, focusedNodeIds, focusSet, filterSet, tf.k) !== "full") return;
       (fullItemsByParent[n.parentId] = fullItemsByParent[n.parentId] || []).push(n);
     });
-    const subCountByItemId = {};
-    Object.keys(subNodesByItemId).forEach((itemId) => { subCountByItemId[itemId] = subNodesByItemId[itemId].length; });
     Object.keys(fullItemsByParent).forEach((parentId) => {
       const parent = simById[parentId];
       if (!parent || parent.x == null) return;
       const grandparent = parent.parentId ? simById[parent.parentId] : null;
       const parentRadius = focusedNodeIds.has(parent.id) ? parent.radius * FOCUS_GROWTH : parent.radius;
-      Object.assign(itemLayout, layoutItemGroup(parent, fullItemsByParent[parentId], grandparent, parentRadius, subCountByItemId));
+      Object.assign(itemLayout, layoutItemGroup(parent, fullItemsByParent[parentId], grandparent, parentRadius));
     });
   }
+
+  // Posición de cada subpendiente cuando su ítem padre está en detalle
+  // "full" (tarjeta de lectura, reubicada por layoutItemGroup lejos de su
+  // ancla física) — se conserva el ÁNGULO que ya trae de la física (de dónde
+  // "orbita" a su padre, repartido por el propio forceManyBody entre varios
+  // hermanos) pero la distancia se recalcula para que el chip quede pegado
+  // AFUERA de esa tarjeta en vez de adentro/encima (su física orbita a 20px
+  // del ANCLA del ítem, que puede estar lejos de donde la tarjeta se dibuja
+  // de verdad). En vista compacta no hace falta esto: ahí el ítem es un
+  // punto chico y su posición física ya alcanza (ver el render más abajo).
+  const subChipPos = {};
+  Object.keys(itemLayout).forEach((itemId) => {
+    const subs = subNodesByItemId[itemId];
+    const itemNode = simById[itemId];
+    const layout = itemLayout[itemId];
+    if (!subs || !itemNode || !layout) return;
+    const push = Math.max(layout.w, layout.h) / 2 + SUB_CHIP_GAP;
+    subs.forEach((sub) => {
+      const dx = sub.x - itemNode.x;
+      const dy = sub.y - itemNode.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      subChipPos[sub.id] = { x: layout.cx + (dx / dist) * push, y: layout.cy + (dy / dist) * push };
+    });
+  });
 
   return (
     <div ref={wrapRef} style={{ width: "100%", height: "100%", position: "relative" }}>
@@ -646,19 +680,22 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick,
         {simLinks.map((l, i) => {
           const s = l.source, t = l.target;
           if (!s || !t || s.x == null || t.x == null) return null;
-          // Un subpendiente no tiene tarjeta propia — cuando su item padre
-          // está en detalle "full" sus nombres se leen DENTRO de esa tarjeta
-          // (ver el render de items más abajo), así que acá no se dibuja un
-          // hilo suelto apuntando a un punto que ya no se pinta.
-          if (t.type === "subpendiente" && itemLayout[t.parentId]) return null;
           const inFocus = isVisible(s.id) && isVisible(t.id);
           const tier = LINK_TIER_STYLE[linkTier(t.type)];
-          // Si el ítem destino está reubicado por el layout de lectura
-          // (detalle "full"), el hilo debe entrar por el borde real de su
-          // tarjeta, no por el ancla física que la física ya abandonó.
+          // Si el origen es un ítem reubicado por el layout de lectura
+          // (detalle "full" — único caso: el hilo hacia uno de sus propios
+          // subpendientes), el hilo debe salir del centro de esa tarjeta, no
+          // del ancla física que la física ya abandonó.
+          const sourceLayout = s.type === "item" ? itemLayout[s.id] : null;
+          const x1 = sourceLayout ? sourceLayout.cx : s.x;
+          const y1 = sourceLayout ? sourceLayout.cy : s.y;
+          // Si el destino es un ítem reubicado, el hilo entra por el borde
+          // real de su tarjeta; si es un subpendiente con su padre en "full",
+          // entra por su chip reproyectado (ver subChipPos más arriba).
           const targetLayout = itemLayout[t.id];
-          const x2 = targetLayout ? targetLayout.anchorX : t.x;
-          const y2 = targetLayout ? targetLayout.anchorY : t.y;
+          const subPos = t.type === "subpendiente" ? subChipPos[t.id] : null;
+          const x2 = targetLayout ? targetLayout.anchorX : subPos ? subPos.x : t.x;
+          const y2 = targetLayout ? targetLayout.anchorY : subPos ? subPos.y : t.y;
           return (
             <g key={i} style={{ opacity: inFocus ? 1 : 0.12, transition: "opacity 220ms ease" }}>
               {/* Gradiente propio de este link (alineado a sus propios x1/y1/x2/y2,
@@ -670,26 +707,26 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick,
                   un color fijo, sin animar nada desde React/JS. */}
               <linearGradient
                 id={linkGradientId(i)} gradientUnits="userSpaceOnUse"
-                x1={s.x} y1={s.y} x2={x2} y2={y2} spreadMethod="repeat"
+                x1={x1} y1={y1} x2={x2} y2={y2} spreadMethod="repeat"
               >
                 <stop offset="0%" stopColor={tier.coreColor} />
                 <stop offset="50%" stopColor="#F4FBFF" />
                 <stop offset="100%" stopColor={tier.coreColor} />
                 <animateTransform
                   attributeName="gradientTransform" type="translate"
-                  from="0 0" to={`${x2 - s.x} ${y2 - s.y}`}
+                  from="0 0" to={`${x2 - x1} ${y2 - y1}`}
                   dur={tier.flowDur} repeatCount="indefinite"
                 />
               </linearGradient>
               <line
-                x1={s.x} y1={s.y} x2={x2} y2={y2}
+                x1={x1} y1={y1} x2={x2} y2={y2}
                 stroke={tier.glowColor} strokeWidth={tier.glow} strokeLinecap="round"
                 opacity={0.35} filter={tier.useFilter ? "url(#trunk-glow)" : undefined}
               />
               {tier.midColor && (
-                <line x1={s.x} y1={s.y} x2={x2} y2={y2} stroke={tier.midColor} strokeWidth={tier.core * 1.6} strokeLinecap="round" opacity={0.45} />
+                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={tier.midColor} strokeWidth={tier.core * 1.6} strokeLinecap="round" opacity={0.45} />
               )}
-              <line x1={s.x} y1={s.y} x2={x2} y2={y2} stroke={`url(#${linkGradientId(i)})`} strokeWidth={tier.core} strokeLinecap="round" opacity={0.95} />
+              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={`url(#${linkGradientId(i)})`} strokeWidth={tier.core} strokeLinecap="round" opacity={0.95} />
             </g>
           );
         })}
@@ -822,10 +859,9 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick,
           // un nodo y leer sus pendientes sin que se corte el label. La
           // posición viene del layout explícito por padre (itemLayout),
           // no de la física — así nunca queda una tarjeta sobre otra.
-          const subNodes = subNodesByItemId[n.id] || [];
           const layout = itemLayout[n.id];
           const cardW = layout ? layout.w : ITEM_CARD_WIDTH;
-          const cardH = layout ? layout.h : estimateItemCardHeight(n.label, subNodes.length);
+          const cardH = layout ? layout.h : estimateItemCardHeight(n.label);
           const cx = layout ? layout.cx : n.x;
           const cy = layout ? layout.cy : n.y;
           const borderColor = glow ? glow.stroke : mixHex(n.color, "#BFE3FF", 0.5);
@@ -868,15 +904,6 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick,
                 }}
               >
                 <div>{n.label}</div>
-                {subNodes.length > 0 && (
-                  // Un subpendiente no tiene tarjeta propia en el grafo (ver
-                  // el bloque de puntitos satélite, más abajo, que se apaga
-                  // justo cuando el item pasa a este modo) — acá se listan
-                  // por nombre, adentro de la tarjeta de su padre.
-                  <ul style={{ margin: "4px 0 0", padding: 0, paddingLeft: 12, listStyle: "disc", fontSize: 8, lineHeight: "11px", opacity: 0.8 }}>
-                    {subNodes.map((s) => <li key={s.id}>{s.label}</li>)}
-                  </ul>
-                )}
               </div>
             </foreignObject>
           );
@@ -884,24 +911,71 @@ export function ForceGraph({ nodes, links, byId, onNodeClick, onNodeDoubleClick,
       </g>
       <g>
         {simNodes.filter((n) => n.type === "subpendiente" && n.x != null).map((n) => {
-          // Sin tarjeta propia: si su item padre ya pasó a detalle "full",
-          // su nombre se lee adentro de esa tarjeta (ver arriba) — acá solo
-          // se pinta el puntito satélite para la vista compacta del item.
-          if (itemLayout[n.parentId]) return null;
           const inFocus = isVisible(n.id);
+          // Vista compacta del item padre: puntito satélite, sin cambios —
+          // su posición física (forceLink, linkDistance 20) ya lo mantiene
+          // pegado al punto del item.
+          if (!itemLayout[n.parentId]) {
+            return (
+              <circle
+                key={n.id}
+                ref={(el) => { if (el && dragBehaviorRef.current) d3.select(el).datum(n).call(dragBehaviorRef.current); }}
+                cx={n.x} cy={n.y} r={3}
+                fill={n.color}
+                stroke="rgba(220,235,250,0.5)"
+                strokeWidth={0.75}
+                style={{ cursor: "grab", opacity: inFocus ? 1 : 0.18, transition: "opacity 220ms ease" }}
+                onClick={() => handleNodeClick(n)}
+              >
+                <title>{n.label}</title>
+              </circle>
+            );
+          }
+          // Item padre en detalle "full": en vez de listar su nombre adentro
+          // de la tarjeta del padre, el subpendiente tiene su propio
+          // chip chico (sin resplandor, fuente más chica) pegado afuera del
+          // borde de esa tarjeta — ver subChipPos más arriba. Menos
+          // protagonismo que el item a propósito: ese es el que "manda" acá.
+          const pos = subChipPos[n.id];
+          if (!pos) return null;
+          const chipW = SUB_CHIP_WIDTH;
+          const chipH = estimateSubChipHeight(n.label);
           return (
-            <circle
+            <foreignObject
               key={n.id}
-              ref={(el) => { if (el && dragBehaviorRef.current) d3.select(el).datum(n).call(dragBehaviorRef.current); }}
-              cx={n.x} cy={n.y} r={3}
-              fill={n.color}
-              stroke="rgba(220,235,250,0.5)"
-              strokeWidth={0.75}
-              style={{ cursor: "grab", opacity: inFocus ? 1 : 0.18, transition: "opacity 220ms ease" }}
-              onClick={() => handleNodeClick(n)}
+              x={pos.x - chipW / 2} y={pos.y - chipH / 2}
+              width={chipW} height={chipH}
+              style={{ opacity: inFocus ? 1 : 0.15, transition: "opacity 220ms ease" }}
             >
-              <title>{n.label}</title>
-            </circle>
+              <div
+                xmlns="http://www.w3.org/1999/xhtml"
+                ref={(el) => { if (el && dragBehaviorRef.current) d3.select(el).datum(n).call(dragBehaviorRef.current); }}
+                onClick={() => handleNodeClick(n)}
+                style={{
+                  boxSizing: "border-box",
+                  width: "100%",
+                  height: "100%",
+                  padding: "4px 6px",
+                  borderRadius: 6,
+                  background: "rgba(11,20,30,0.45)",
+                  border: `1px solid ${mixHex(n.color, "#0b0f14", 0.35)}`,
+                  color: "#C9DCEF",
+                  fontFamily: "'Work Sans', sans-serif",
+                  fontSize: 7.5,
+                  lineHeight: "10px",
+                  fontWeight: 400,
+                  cursor: "grab",
+                  overflowWrap: "break-word",
+                  wordBreak: "break-word",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  textAlign: "center",
+                }}
+              >
+                {n.label}
+              </div>
+            </foreignObject>
           );
         })}
       </g>

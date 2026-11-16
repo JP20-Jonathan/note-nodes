@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CATEGORIES, PROJECT_FIELD_BY_CATEGORY } from "../../data/categories.js";
 import { TIPIFICADOS, getTipificado } from "../../data/tipificados.js";
-import { anchorFor, countActiveForCap } from "../../data/businessRules.js";
+import { anchorFor, countActiveForCap, isDuplicateTitle } from "../../data/businessRules.js";
 import { draftNodeKey, listDrafts, saveDraft, discardDraft, newDraftId } from "../../data/itemDrafts.js";
 import { RichTextField } from "../RichTextField.jsx";
 
@@ -88,6 +88,14 @@ export function ItemFormModal({ formState, currentMonthKey, nextMonthKey, curren
   async function handleSubmit(e) {
     e.preventDefault();
     if (!name.trim()) { setError("Escribe un nombre para el pendiente."); return; }
+    // Dos pendientes activos no pueden compartir título (ver
+    // isDuplicateTitle/matchQuickNoteTarget en businessRules.js — la Nota
+    // Rápida depende de que un título sea único para saber a qué pendiente
+    // se refiere un match de texto, sin esto sería ambiguo).
+    if (isDuplicateTitle(items, name, existing ? existing.id : null)) {
+      setError("Ya existe un pendiente activo con ese título — no se pueden repetir.");
+      return;
+    }
 
     let projectId = null;
     if (projectField) {

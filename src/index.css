@@ -150,12 +150,16 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
 .subpendiente-row-body { flex: 1; min-width: 0; }
 .subpendiente-row-name { font-size: 13px; }
 .subpendiente-row-notes { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.subpendiente-row-done { width: 26px; height: 26px; min-width: 26px; font-size: 12px; flex-shrink: 0; }
 .subpendiente-row-del { width: 26px; height: 26px; min-width: 26px; font-size: 12px; flex-shrink: 0; }
 
 /* Contador de subpendientes, al lado del botón "Eliminar" (no encima) —
    solo si tiene al menos uno. Un elemento más en el flujo de .modal-actions,
    no un badge superpuesto. Es un botón real (no un span): al tocarlo abre
-   la red de tarjetas conectadas (ver SubPendientesWeb.jsx). */
+   la red de tarjetas conectadas (ver SubPendientesWeb.jsx). Muestra
+   hechos/total (ej. "2/5"), no solo el total — así se nota el avance sin
+   tener que abrir la lista. Se deshabilita (sin abrir red vacía) cuando ya
+   no queda ninguno pendiente por mostrar. */
 .subpendiente-count-badge {
   display: inline-flex; align-items: center; justify-content: center; align-self: center;
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
@@ -163,6 +167,8 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
   border: none; cursor: pointer; font-family: 'Work Sans', sans-serif;
 }
 .subpendiente-count-badge:hover { filter: brightness(1.1); }
+.subpendiente-count-badge:disabled { cursor: default; opacity: 0.7; }
+.subpendiente-count-badge:disabled:hover { filter: none; }
 
 /* SubPendientesWeb — tarjetas chicas arrastrables conectadas por líneas al
    pendiente central, dentro del mismo .modal-backdrop que ItemDetailPopover
@@ -341,9 +347,21 @@ html, body { margin: 0; padding: 0; background: #141C17; min-height: 100%; }
 .indicator-filter-checkbox { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
 
 .color-legend { font-size: 11.5px; color: var(--text-dim); }
-.color-legend-title { font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
-.color-legend-row { display: flex; align-items: center; gap: 7px; }
+/* Cada renglón es un botón real (toca una vez = resalta esos nodos en el
+   grafo, igual que un checkbox de "Resaltar en el Árbol" pero sin la
+   casilla — toca de nuevo = lo quita). Reset de botón nativo para que siga
+   leyéndose como texto plano, no como un botón de verdad. */
+.color-legend-row {
+  display: flex; align-items: center; gap: 7px;
+  background: none; border: none; padding: 1px 2px; margin: -1px -2px;
+  font: inherit; color: inherit; text-shadow: inherit; text-align: left;
+  cursor: pointer; border-radius: 4px; transition: opacity 150ms ease, background 150ms ease;
+}
+.color-legend-row:hover { background: rgba(255,255,255,0.06); }
 .color-legend-row strong { color: var(--text); }
+.color-legend-row-active { background: rgba(255,255,255,0.1); }
+.color-legend-row-active strong { color: var(--text); }
+.color-legend-row-dim { opacity: 0.45; }
 .color-legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 @keyframes color-legend-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 .color-legend-dot-pulse { animation: color-legend-pulse 1.6s ease-in-out infinite; }

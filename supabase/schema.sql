@@ -208,3 +208,20 @@ end $$;
 -- que antes de esta migración — no afecta ninguna nota existente.
 alter table public.notes add column if not exists width integer;
 alter table public.notes add column if not exists height integer;
+
+-- Migración 2026-10-18: la "Nota rápida" (composer flotante, portapapeles)
+-- ahora guarda su borrador en esta misma tabla en vez de solo en
+-- localStorage, para que no se pierda al limpiar el navegador ni al
+-- cambiar de dispositivo. Se marca con is_draft = true (como mucho una fila
+-- así por usuario) y la UI la filtra aparte: nunca se dibuja como nota
+-- flotante en el lienzo ni cuenta en el indicador de "notas". Columna
+-- aditiva con default false — no afecta ninguna nota existente.
+alter table public.notes add column if not exists is_draft boolean not null default false;
+
+-- Migración 2026-10-24: un subpendiente ahora se puede marcar como "hecho"
+-- (igual que un pendiente, mismo par done/done_at) — el contador del
+-- popover pasa de mostrar solo el total a mostrar hechos/total. Columnas
+-- aditivas con default false/null — no afectan ningún subpendiente
+-- existente (quedan pendientes hasta que se marquen).
+alter table public.subpendientes add column if not exists done boolean not null default false;
+alter table public.subpendientes add column if not exists done_at timestamptz;
