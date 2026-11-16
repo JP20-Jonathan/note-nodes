@@ -51,8 +51,12 @@ function buildItemNode(id, item, color, parentId, currentMonthKey, currentWeekSt
 // ItemDetailPopover del padre al tocar uno — un subpendiente no tiene
 // detalle propio, solo nombre y nota (ver SubPendienteForm.jsx).
 function buildSubPendienteNodes(item, itemNodeId, itemColor, subPendientesByItemId) {
-  const subs = subPendientesByItemId[item.id];
-  if (!subs || subs.length === 0) return { nodes: [], links: [] };
+  // Un subpendiente hecho desaparece del grafo igual que en el popover (ver
+  // ItemDetailPopover: visibleSubs) — mismo criterio que activeItems de
+  // abajo para los pendientes mismos, solo que acá no hay una vista
+  // "Completados" a la que mandarlo, simplemente deja de dibujarse.
+  const subs = (subPendientesByItemId[item.id] || []).filter((sub) => !sub.done);
+  if (subs.length === 0) return { nodes: [], links: [] };
   const color = lightenHex(itemColor, LIGHTEN_STEP);
   const nodes = subs.map((sub) => ({
     id: `subpendiente:${sub.id}`,

@@ -13,7 +13,7 @@ import { SubPendientesWeb } from "./SubPendientesWeb.jsx";
 // un nodo es más fácil que en el Tablero (ver App.jsx, detailSource).
 export function ItemDetailPopover({
   item, projects, subPendientes, currentMonthKey, currentWeekStart, todayStr,
-  onClose, onToggleDone, onEdit, onDelete, onRenew, onAddSubPendiente, onDeleteSubPendiente, onEditSubPendiente, confirmDone,
+  onClose, onToggleDone, onEdit, onDelete, onRenew, onAddSubPendiente, onDeleteSubPendiente, onEditSubPendiente, onToggleSubPendienteDone, confirmDone,
 }) {
   const [armedConfirm, setArmedConfirm] = useState(false);
   const [addingSub, setAddingSub] = useState(false);
@@ -38,7 +38,15 @@ export function ItemDetailPopover({
   const tip = getTipificado(item.tipificado);
   const overdue = isOverdue(item, currentMonthKey, currentWeekStart);
   const needsConfirm = confirmDone && !item.done;
+  // subs: TODOS los subpendientes (incluidos los hechos) — el contador de
+  // abajo necesita el total real para mostrar hechos/total. visibleSubs es
+  // lo que de verdad se dibuja (filas, red de SubPendientesWeb): un
+  // subpendiente hecho desaparece de la vista apenas se marca, igual que un
+  // pendiente completo se va a "Completados" — solo su huella queda en el
+  // contador.
   const subs = subPendientes || [];
+  const visibleSubs = subs.filter((sub) => !sub.done);
+  const doneCount = subs.length - visibleSubs.length;
 
   function handleToggleDoneClick() {
     if (needsConfirm && !armedConfirm) { setArmedConfirm(true); return; }
@@ -95,8 +103,8 @@ export function ItemDetailPopover({
 
   return (
     <div className="modal-backdrop" onClick={handleBackdropClick}>
-      {showWeb && subs.length > 0 && modalRect && (
-        <SubPendientesWeb subPendientes={subs} pendienteRect={modalRect} onClose={() => setShowWeb(false)} onEditSubPendiente={(id, data) => onEditSubPendiente(id, item.id, data)} />
+      {showWeb && visibleSubs.length > 0 && modalRect && (
+        <SubPendientesWeb subPendientes={visibleSubs} pendienteRect={modalRect} onClose={() => setShowWeb(false)} onEditSubPendiente={(id, data) => onEditSubPendiente(id, item.id, data)} />
       )}
       <div
         ref={modalRef}
@@ -140,14 +148,23 @@ export function ItemDetailPopover({
           <SubPendienteForm onSubmit={handleAddSub} onCancel={() => setAddingSub(false)} />
         )}
 
-        {subs.length > 0 && (
+        {visibleSubs.length > 0 && (
           <ul className="subpendiente-list">
-            {subs.map((sub) => (
+            {visibleSubs.map((sub) => (
               <li key={sub.id} className="subpendiente-row">
                 <div className="subpendiente-row-body">
                   <div className="subpendiente-row-name">{sub.name}</div>
                   {sub.notes && <div className="subpendiente-row-notes">{renderInlineMarkdown(sub.notes)}</div>}
                 </div>
+                <button
+                  type="button"
+                  className="icon-btn subpendiente-row-done"
+                  onClick={() => onToggleSubPendienteDone(sub.id, item.id)}
+                  aria-label={`Marcar hecho subpendiente ${sub.name}`}
+                  title="Marcar hecho"
+                >
+                  ✓
+                </button>
                 <button
                   type="button"
                   className="icon-btn subpendiente-row-del"
@@ -178,9 +195,14 @@ export function ItemDetailPopover({
               type="button"
               className="subpendiente-count-badge"
               onClick={handleToggleWeb}
-              title={`Ver ${subs.length} subpendiente${subs.length === 1 ? "" : "s"} conectado${subs.length === 1 ? "" : "s"}`}
+              disabled={visibleSubs.length === 0}
+              title={
+                visibleSubs.length > 0
+                  ? `Ver ${visibleSubs.length} subpendiente${visibleSubs.length === 1 ? "" : "s"} pendiente${visibleSubs.length === 1 ? "" : "s"} conectado${visibleSubs.length === 1 ? "" : "s"}`
+                  : "Todos los subpendientes están hechos"
+              }
             >
-              {subs.length}
+              {doneCount}/{subs.length}
             </button>
           )}
         </div>

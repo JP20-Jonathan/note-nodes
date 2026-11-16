@@ -24,24 +24,82 @@ export function projectNameFor(projects, item) {
   return p ? p.name : null;
 }
 
-// Para la Nota Rápida: esa categoría no pregunta el proyecto, así que lo
-// buscamos escrito dentro del cuerpo de la nota (sin importar mayúsculas o
-// minúsculas). Si el texto menciona varios proyectos, gana el que aparece
-// primero (el índice más bajo en el texto), no el primero de la lista.
-export function findProjectIdInText(text, categoryProjects) {
-  if (!text || !categoryProjects?.length) return null;
+// Dos pendientes ACTIVOS no pueden compartir título — sin esto, un match de
+// texto de la Nota Rápida contra el título de un pendiente (ver
+// matchQuickNoteTarget) podría ser ambiguo entre 2. Sin mayúsculas ni
+// espacios de sobra: "Backend " y "backend" cuentan como el mismo título.
+// Uno ya completado no cuenta — reusar su título no es ambiguo, ya no es un
+// destino válido para un match.
+function normalizeTitle(s) {
+  return (s || "").trim().toLowerCase();
+}
+export function isDuplicateTitle(items, name, excludeId = null) {
+  const normalized = normalizeTitle(name);
+  if (!normalized) return false;
+  return items.some((i) => i.id !== excludeId && !i.done && normalizeTitle(i.name) === normalized);
+}
+
+// Nota Rápida: a qué apunta el texto que escribiste — ¿menciona el título de
+// un pendiente activo YA EXISTENTE? (la nota se vuelve subpendiente de ese).
+// ¿O menciona una categoría, sola o con su proyecto/área pegado con "/"
+// (ej. "cesde/frontend")? (la nota se vuelve un pendiente nuevo ahí). Gana
+// lo que aparezca MÁS TEMPRANO en el texto (índice más bajo) — no el orden
+// en que se revisan los candidatos acá abajo, por eso se comparan los 3
+// tipos de candidato por índice en vez de devolver apenas se encuentra el
+// primero.
+//
+// El título de un pendiente nuevo siempre es la primera línea del texto
+// (ver splitComposerText en ClipboardComposer.jsx) — si ese título coincide
+// exactamente con uno ya existente, SIEMPRE gana acá (índice 0 es el
+// mínimo posible), así nunca se llega a crear un pendiente duplicado desde
+// la Nota Rápida: en vez de eso, queda como subpendiente del original.
+// isDuplicateTitle (arriba) aplica la misma regla donde sí hace falta
+// bloquear con un error en vez de resolverlo solo (ItemFormModal, el
+// formulario normal de crear/editar).
+export function matchQuickNoteTarget(text, { items, categories, projects }) {
+  if (!text) return { type: "none" };
   const haystack = text.toLowerCase();
-  let bestIndex = -1;
-  let bestId = null;
-  for (const project of categoryProjects) {
-    if (!project.name) continue;
-    const idx = haystack.indexOf(project.name.toLowerCase());
-    if (idx !== -1 && (bestIndex === -1 || idx < bestIndex)) {
-      bestIndex = idx;
-      bestId = project.id;
-    }
+  let best = null;
+  function consider(index, candidate) {
+    if (index !== -1 && (!best || index < best.index)) best = { index, ...candidate };
   }
-  return bestId;
+
+  items.filter((i) => !i.done).forEach((item) => {
+    if (!item.name) return;
+    consider(haystack.indexOf(item.name.toLowerCase()), { type: "pendiente", itemId: item.id });
+  });
+
+  categories.forEach((cat) => {
+    const catIdx = haystack.indexOf(cat.label.toLowerCase());
+    if (catIdx === -1) return;
+    const projectField = PROJECT_FIELD_BY_CATEGORY[cat.id];
+    if (projectField) {
+      const pool = projects[projectField.sourceCategory] || [];
+      const afterCat = text.slice(catIdx + cat.label.length);
+      const slash = afterCat.match(/^\s*\/\s*/);
+      if (slash) {
+        const afterSlash = afterCat.slice(slash[0].length).toLowerCase();
+        const proj = pool.find((p) => p.name && afterSlash.startsWith(p.name.toLowerCase()));
+        if (proj) { consider(catIdx, { type: "category", categoryId: cat.id, projectId: proj.id }); return; }
+      }
+    }
+    consider(catIdx, { type: "category", categoryId: cat.id, projectId: null });
+  });
+
+  // Proyecto/área mencionado SOLO, sin el nombre de su categoría antes —
+  // igual cuenta, infiere la categoría dueña.
+  categories.forEach((cat) => {
+    const projectField = PROJECT_FIELD_BY_CATEGORY[cat.id];
+    if (!projectField) return;
+    const pool = projects[projectField.sourceCategory] || [];
+    pool.forEach((proj) => {
+      if (!proj.name) return;
+      consider(haystack.indexOf(proj.name.toLowerCase()), { type: "category", categoryId: cat.id, projectId: proj.id });
+    });
+  });
+
+  if (!best) return { type: "none" };
+  return { type: best.type, itemId: best.itemId, categoryId: best.categoryId, projectId: best.projectId };
 }
 
 // Si un deadline cae dentro de una semana dada (lunes a domingo, 7 días

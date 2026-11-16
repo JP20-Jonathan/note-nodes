@@ -44,7 +44,11 @@ function rowToNote(row) {
 // tipificado, fecha límite, etc. los hereda del pendiente padre (ver
 // pendienteId), así que no se duplican acá.
 function rowToSubPendiente(row) {
-  return { id: row.id, pendienteId: row.pendiente_id, name: row.name, notes: row.notes || "", createdAt: new Date(row.created_at).getTime() };
+  return {
+    id: row.id, pendienteId: row.pendiente_id, name: row.name, notes: row.notes || "",
+    done: !!row.done, doneAt: row.done_at ? new Date(row.done_at).getTime() : null,
+    createdAt: new Date(row.created_at).getTime(),
+  };
 }
 
 export async function fetchAllData(userId) {
@@ -70,10 +74,19 @@ export async function fetchAllData(userId) {
     (subPendientes[sub.pendienteId] || (subPendientes[sub.pendienteId] = [])).push(sub);
   });
 
+  // El borrador de la Nota Rápida vive en la misma tabla "notes", marcado
+  // con is_draft — se saca aparte para que nunca se dibuje como nota
+  // flotante en el lienzo. `row.is_draft` es undefined (falsy) si todavía
+  // no se corrió la migración que agrega la columna, así que esto sigue
+  // funcionando (sin borrador persistido) aunque falte correrla.
+  const draftRow = notesRes.data.find((row) => row.is_draft);
+  const notes = notesRes.data.filter((row) => !row.is_draft).map(rowToNote);
+
   return {
     items: itemsRes.data.map(rowToItem),
     projects,
-    notes: notesRes.data.map(rowToNote),
+    notes,
+    clipboardDraft: draftRow ? { id: draftRow.id, text: draftRow.text || "" } : null,
     subPendientes,
   };
 }
@@ -140,6 +153,8 @@ export async function updateSubPendiente(id, patch) {
   const row = {};
   if ("name" in patch) row.name = patch.name;
   if ("notes" in patch) row.notes = patch.notes || null;
+  if ("done" in patch) row.done = patch.done;
+  if ("doneAt" in patch) row.done_at = patch.doneAt;
   const { error } = await supabase.from("subpendientes").update(row).eq("id", id);
   if (error) throw error;
 }
@@ -165,11 +180,12 @@ export async function deleteProject(id) {
 }
 
 export async function insertNote(userId, note) {
-  const { data: row, error } = await supabase
-    .from("notes")
-    .insert({ user_id: userId, text: note.text || "", x: Math.round(note.x), y: Math.round(note.y) })
-    .select()
-    .single();
+  const payload = { user_id: userId, text: note.text || "", x: Math.round(note.x), y: Math.round(note.y) };
+  // is_draft solo se manda cuando aplica (borrador de la Nota Rápida) para
+  // que crear una nota flotante normal siga funcionando aunque todavía no
+  // se haya corrido la migración que agrega esa columna.
+  if (note.isDraft) payload.is_draft = true;
+  const { data: row, error } = await supabase.from("notes").insert(payload).select().single();
   if (error) throw error;
   return rowToNote(row);
 }
@@ -253,7 +269,8 @@ export async function replaceAllData(userId, { items, projects, notes, subPendie
     const newItemId = itemIdByOldId[oldItemId];
     if (!newItemId) continue;
     for (const sub of subs) {
-      await insertSubPendiente(userId, newItemId, { name: sub.name, notes: sub.notes });
+      const row = await insertSubPendiente(userId, newItemId, { name: sub.name, notes: sub.notes });
+      if (sub.done) await updateSubPendiente(row.id, { done: true, doneAt: sub.doneAt || null });
     }
   }
 }

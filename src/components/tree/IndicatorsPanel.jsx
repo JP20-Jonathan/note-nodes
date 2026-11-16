@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { TIPIFICADO_ICON, getTipificado } from "../../data/tipificados.js";
+import { getTipificado } from "../../data/tipificados.js";
 import { useDraggablePosition } from "../../hooks/useDraggablePosition.js";
 
 const POS_KEY = "nn-indicators-pos";
@@ -13,13 +13,14 @@ function loadPos() {
 
 // Panel flotante (sin fondo — se integra con el grafo) con totales
 // generales + conteos de los tipificados que todavía no tienen su propio
-// color en ColorLegend.jsx (urgentes/importantísimas/esta_semana/en_curso
-// ya se fusionaron ahí, con su número al lado del color). Los checkboxes
-// filtran/resaltan esos tipificados directamente en el grafo (ver
+// color en ColorLegend.jsx (urgentes/importantísimas/esta_semana/en_curso/
+// próxima_semana ya se fusionaron ahí, con su número al lado del color Y su
+// propio toque para resaltar — ver ColorLegend.jsx). Los checkboxes que
+// quedan filtran/resaltan esos tipificados directamente en el grafo (ver
 // tipificadoFilter en ForceGraph) — no se persisten a propósito, es una
 // exploración puntual de la sesión, no algo que tenga sentido recordar.
-const INDICATOR_IDS = ["proxima_semana", "este_mes", "proximo_mes"];
-const FILTER_IDS = ["esta_semana", "proxima_semana", "este_mes", "proximo_mes"];
+const INDICATOR_IDS = ["este_mes", "proximo_mes"];
+const FILTER_IDS = ["este_mes", "proximo_mes"];
 
 export function IndicatorsPanel({ items, projects, notes, tipificadoFilter, onToggleFilter, defaultPos, canvasBounds, hideWhenOutside }) {
   const userMovedRef = useRef(loadPos() !== null);
@@ -56,7 +57,7 @@ export function IndicatorsPanel({ items, projects, notes, tipificadoFilter, onTo
       <div className="indicators-list">
         {INDICATOR_IDS.map((id) => (
           <span key={id} className="indicator-count">
-            {TIPIFICADO_ICON[id] || ""} {getTipificado(id).label}: <strong>{countFor(id)}</strong>
+            {getTipificado(id).label}: <strong>{countFor(id)}</strong>
           </span>
         ))}
       </div>

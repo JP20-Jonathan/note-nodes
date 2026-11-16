@@ -3,9 +3,9 @@ import { supabase } from "./lib/supabaseClient.js";
 import * as db from "./lib/db.js";
 import { AuthScreen } from "./components/auth/AuthScreen.jsx";
 import { monthKey, addMonthKey, mondayOf, addDaysToDateStr, todayInMedellin, pad2 } from "./data/dateUtils.js";
-import { anchorFor, countActiveForCap, findProjectIdInText } from "./data/businessRules.js";
+import { anchorFor, countActiveForCap, matchQuickNoteTarget } from "./data/businessRules.js";
 import { getTipificado } from "./data/tipificados.js";
-import { DEFAULT_CESDE_AREAS, CATEGORIES, PROJECT_FIELD_BY_CATEGORY } from "./data/categories.js";
+import { DEFAULT_CESDE_AREAS, CATEGORIES } from "./data/categories.js";
 import { loadColorOverrides, saveColorOverrides } from "./data/colorOverrides.js";
 import { useArbolViewModel } from "./hooks/useArbolViewModel.js";
 import { useDragGhost } from "./hooks/useDragGhost.js";
@@ -43,6 +43,12 @@ function PendientesApp({ userId, userEmail }) {
   const [items, setItems] = useState([]);
   const [projects, setProjects] = useState({});
   const [notes, setNotes] = useState([]);
+  // Borrador de la Nota Rápida (ClipboardComposer) — vive en la tabla
+  // "notes" marcado con is_draft, separado de `notes` (que son las notas
+  // flotantes del lienzo) para que nunca se dibuje como una de ellas.
+  // null = todavía no hay nada guardado en la base para este usuario.
+  const [clipboardDraft, setClipboardDraft] = useState(null);
+  const draftCreatingRef = useRef(null);
   // Subpendientes agrupados por id de pendiente padre (mismo patrón que
   // `projects`, agrupado por categoría) para que ItemDetailPopover los
   // busque en O(1) en vez de filtrar un array plano en cada render.
@@ -194,6 +200,7 @@ function PendientesApp({ userId, userEmail }) {
         setItems(data.items);
         setProjects(data.projects);
         setNotes(data.notes);
+        setClipboardDraft(data.clipboardDraft);
         setSubPendientes(data.subPendientes);
         setLoaded(true);
       } catch (e) {
@@ -259,6 +266,27 @@ function PendientesApp({ userId, userEmail }) {
     ));
     try { await db.updateSubPendiente(id, data); setSaveError(false); } catch (e) { setSaveError(true); }
   }, []);
+
+  // Mismo patrón que toggleDone (abajo), pero sobre un subpendiente — el
+  // reintento sin doneAt es por si todavía no corriste la migración
+  // 2026-10-24 (done/done_at) en Supabase.
+  const toggleSubPendienteDone = useCallback(async (id, pendienteId) => {
+    const sub = (subPendientes[pendienteId] || []).find((s) => s.id === id);
+    if (!sub) return;
+    const done = !sub.done;
+    const doneAt = done ? Date.now() : null;
+    setSubPendientes((prev) => (
+      prev[pendienteId]
+        ? { ...prev, [pendienteId]: prev[pendienteId].map((s) => (s.id === id ? { ...s, done, doneAt } : s)) }
+        : prev
+    ));
+    try {
+      await db.updateSubPendiente(id, { done, doneAt: done ? new Date(doneAt).toISOString() : null });
+      setSaveError(false);
+    } catch (e) {
+      try { await db.updateSubPendiente(id, { done }); setSaveError(false); } catch (e2) { setSaveError(true); }
+    }
+  }, [subPendientes]);
 
   const toggleDone = useCallback(async (id) => {
     const item = items.find((i) => i.id === id);
@@ -401,20 +429,68 @@ function PendientesApp({ userId, userEmail }) {
   }
   // Desde ClipboardComposer: la "Nota rápida" crea un pendiente directo (no
   // una nota flotante) — el primer renglón que el usuario escribió es el
-  // nombre, el resto (con su negrilla/lista tal cual) es la nota opcional;
-  // categoría/tipificado/fecha límite los elige ahí mismo, en el composer.
-  // El composer no pregunta por proyecto/área, así que si la categoría lo
-  // necesita lo buscamos mencionado dentro del cuerpo de la nota.
+  // nombre, el resto (texto plano tal cual) es la nota opcional; categoría/
+  // tipificado/fecha límite son el respaldo manual del composer, pero el
+  // texto manda si menciona algo reconocible (ver matchQuickNoteTarget):
+  // - Si menciona el título de un pendiente YA EXISTENTE, esta nota se suma
+  //   como SUBPENDIENTE de ese en vez de crear uno nuevo (categoría,
+  //   proyecto, tipificado y fecha del formulario se descartan — un
+  //   subpendiente hereda todo eso de su padre).
+  // - Si menciona una categoría (sola o como "categoria/proyecto", ej.
+  //   "cesde/frontend"), esa categoría/proyecto pisa lo elegido a mano en
+  //   el dropdown del composer.
+  // - Si no menciona nada reconocible, se usa tal cual lo del composer
+  //   (comportamiento de siempre).
   async function createItemFromComposer({ name, notes, category, tipificado, deadline }) {
+    const text = [name, notes].filter(Boolean).join("\n");
+    const match = matchQuickNoteTarget(text, { items, categories: CATEGORIES, projects });
+    if (match.type === "pendiente") {
+      await addSubPendiente(match.itemId, { name, notes });
+      return;
+    }
+    const finalCategory = match.type === "category" ? match.categoryId : category;
+    const projectId = match.type === "category" ? match.projectId : null;
     const anchors = anchorFor(tipificado, { currentMonthKey, nextMonthKey, currentWeekStart, nextWeekStart });
-    const projectField = PROJECT_FIELD_BY_CATEGORY[category];
-    const categoryProjects = projectField ? (projects[projectField.sourceCategory] || []) : [];
-    const projectId = findProjectIdInText(notes, categoryProjects);
     await addItem({
-      name, category, projectId, tipificado,
+      name, category: finalCategory, projectId, tipificado,
       anchorMonth: anchors.anchorMonth, anchorWeek: anchors.anchorWeek,
       deadline: deadline || null, notes,
     });
+  }
+  // Guarda el borrador de la Nota Rápida en la base — crea la fila
+  // is_draft la primera vez que hay algo que guardar, la actualiza después,
+  // y la borra cuando el texto queda vacío (nota convertida o vaciada a
+  // mano). `draftCreatingRef` evita crear dos filas si el composer dispara
+  // varios guardados mientras el primer insert todavía no vuelve.
+  async function saveClipboardDraft(text) {
+    const trimmed = text || "";
+    if (!trimmed.trim()) {
+      const id = clipboardDraft?.id;
+      if (id) {
+        setClipboardDraft(null);
+        try { await db.deleteNote(id); setSaveError(false); } catch (e) { setSaveError(true); }
+      }
+      return;
+    }
+    let id = clipboardDraft?.id;
+    if (!id) {
+      if (!draftCreatingRef.current) {
+        draftCreatingRef.current = db.insertNote(userId, { text: trimmed, x: 0, y: 0, isDraft: true })
+          .finally(() => { draftCreatingRef.current = null; });
+      }
+      try {
+        const row = await draftCreatingRef.current;
+        id = row.id;
+        setClipboardDraft({ id, text: trimmed });
+        setSaveError(false);
+        if (row.text !== trimmed) {
+          try { await db.updateNoteText(id, trimmed); } catch (e) { setSaveError(true); }
+        }
+      } catch (e) { setSaveError(true); }
+      return;
+    }
+    setClipboardDraft((prev) => (prev ? { ...prev, text: trimmed } : prev));
+    try { await db.updateNoteText(id, trimmed); setSaveError(false); } catch (e) { setSaveError(true); }
   }
   async function commitNoteText(id, text) {
     const trimmed = text.trim();
@@ -608,6 +684,7 @@ function PendientesApp({ userId, userEmail }) {
             <ColorLegend
               items={items} currentMonthKey={currentMonthKey} currentWeekStart={currentWeekStart}
               defaultPos={legendDefaultPos} canvasBounds={canvasBounds} hideWhenOutside={treeExpanded}
+              tipificadoFilter={tipificadoFilter} onToggleFilter={toggleTipificadoFilter}
             />
             {notes.filter((n) => !n.collapsed).map((note) => (
               <FloatingNote key={note.id} note={note} editing={editingNoteId === note.id}
@@ -683,6 +760,7 @@ function PendientesApp({ userId, userEmail }) {
           onAddSubPendiente={addSubPendiente}
           onDeleteSubPendiente={deleteSubPendiente}
           onEditSubPendiente={editSubPendiente}
+          onToggleSubPendienteDone={toggleSubPendienteDone}
         />
       )}
 
@@ -727,7 +805,7 @@ function PendientesApp({ userId, userEmail }) {
         />
       )}
 
-      <ClipboardComposer onConvert={createItemFromComposer} />
+      <ClipboardComposer draft={clipboardDraft} onSaveDraft={saveClipboardDraft} onConvert={createItemFromComposer} />
     </div>
   );
 }
